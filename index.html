@@ -169,6 +169,56 @@
   const app = document.getElementById("app");
   const hud = document.getElementById("hud");
 
+  // ---------- Audio (synthesized, no external files) ----------
+  let actx = null, noiseBuffer = null, masterGain = null, lastEmptyClick = 0;
+  function initAudio() {
+    if (actx) { if (actx.state === "suspended") actx.resume(); return; }
+    try { actx = new (window.AudioContext || window.webkitAudioContext)(); }
+    catch (e) { actx = null; return; }
+    masterGain = actx.createGain(); masterGain.gain.value = 0.45; masterGain.connect(actx.destination);
+    const len = Math.floor(actx.sampleRate * 0.4);
+    noiseBuffer = actx.createBuffer(1, len, actx.sampleRate);
+    const d = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  }
+  function playShot() {
+    if (!actx) return;
+    const t = actx.currentTime;
+    const vary = 0.9 + Math.random() * 0.2;
+    // sharp crack: filtered noise burst
+    const src = actx.createBufferSource(); src.buffer = noiseBuffer;
+    const hp = actx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 500 * vary;
+    const lp = actx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 7000 * vary;
+    const ng = actx.createGain();
+    ng.gain.setValueAtTime(1.0, t);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.11);
+    src.connect(hp); hp.connect(lp); lp.connect(ng); ng.connect(masterGain);
+    src.start(t); src.stop(t + 0.13);
+    // low body "thump"
+    const osc = actx.createOscillator(); osc.type = "triangle";
+    osc.frequency.setValueAtTime(170 * vary, t);
+    osc.frequency.exponentialRampToValueAtTime(48, t + 0.09);
+    const og = actx.createGain();
+    og.gain.setValueAtTime(0.85, t);
+    og.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+    osc.connect(og); og.connect(masterGain);
+    osc.start(t); osc.stop(t + 0.16);
+  }
+  function playEmpty() {
+    if (!actx) return;
+    const now = performance.now();
+    if (now - lastEmptyClick < 180) return; // throttle dry-fire clicks
+    lastEmptyClick = now;
+    const t = actx.currentTime;
+    const osc = actx.createOscillator(); osc.type = "square";
+    osc.frequency.setValueAtTime(2200, t);
+    const g = actx.createGain();
+    g.gain.setValueAtTime(0.12, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+    osc.connect(g); g.connect(masterGain);
+    osc.start(t); osc.stop(t + 0.04);
+  }
+
   // ---------- Renderer / scene / camera ----------
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -393,7 +443,7 @@
       // paused look; show subtle hint by dimming crosshair — keep simple: do nothing destructive
     }
   });
-  renderer.domElement.addEventListener("click", () => { if (state === S.PLAY && !pointerLocked) requestLock(); });
+  renderer.domElement.addEventListener("click", () => { initAudio(); if (state === S.PLAY && !pointerLocked) requestLock(); });
 
   // ---------- Firing ----------
   const raycaster = new THREE.Raycaster();
@@ -403,10 +453,11 @@
     const now = performance.now();
     if (WEAPON.reloading) return;
     if (now - WEAPON.lastShot < WEAPON.fireRate) return;
-    if (WEAPON.mag <= 0) { reload(); return; }
+    if (WEAPON.mag <= 0) { playEmpty(); reload(); return; }
     WEAPON.lastShot = now;
     WEAPON.mag--;
     updateAmmo();
+    playShot();
 
     // recoil & flash
     WEAPON.recoil = Math.min(WEAPON.recoil + 0.04, 0.16);
@@ -586,6 +637,7 @@
 
   // ---------- Game flow ----------
   function startGame() {
+    initAudio();
     state = S.PLAY;
     document.getElementById("startScreen").classList.add("hidden");
     document.getElementById("overScreen").classList.add("hidden");
