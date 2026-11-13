@@ -246,7 +246,7 @@
 
   // Build timestamp — bumped on each commit so you can confirm the live
   // GitHub Page matches the latest push.
-  const BUILD = "2026-11-13 14:34 UTC";
+  const BUILD = "2026-11-13 14:39 UTC";
   const _stamp = document.getElementById("buildStamp");
   if (_stamp) _stamp.textContent = "BUILD " + BUILD;
 
@@ -531,14 +531,14 @@
     g.add(part(new THREE.BoxGeometry(0.08,0.1,0.22), polymer, [0,-0.01,0.28]));
     g.add(part(new THREE.BoxGeometry(0.03,0.06,0.08), metal, [0,0.1,-0.2]));
     g.add(part(new THREE.BoxGeometry(0.06,0.16,0.08), polymer, [0,-0.12,0.16], [-0.35,0,0]));
-    mkHands(g, -0.26); addFlash(g, -0.78, 0.08); finishModel(g, "rifle", {x:0.28,y:-0.26,z:-0.6});
+    mkHands(g, -0.26); addFlash(g, -0.78, 0.08); finishModel(g, "rifle", {x:0.14,y:-0.2,z:-0.52});
   })();
 
   (() => { const g = new THREE.Group();   // PISTOL
     g.add(part(new THREE.BoxGeometry(0.08,0.1,0.26), metal, [0,0,-0.06]));
     g.add(part(new THREE.CylinderGeometry(0.015,0.015,0.1,10), metal, [0,0.02,-0.2], [Math.PI/2,0,0]));
     g.add(part(new THREE.BoxGeometry(0.07,0.14,0.08), polymer, [0,-0.11,0.02], [-0.3,0,0]));
-    mkHands(g, -0.06); addFlash(g, -0.3, 0.055); finishModel(g, "pistol", {x:0.2,y:-0.22,z:-0.45});
+    mkHands(g, -0.06); addFlash(g, -0.3, 0.055); finishModel(g, "pistol", {x:0.1,y:-0.17,z:-0.42});
   })();
 
   (() => { const g = new THREE.Group();   // LMG (machine gun)
@@ -548,7 +548,7 @@
     g.add(part(new THREE.BoxGeometry(0.1,0.13,0.26), polymer, [0,-0.02,0.36]));
     g.add(part(new THREE.BoxGeometry(0.04,0.07,0.1), metal, [0,0.13,-0.22]));
     g.add(part(new THREE.BoxGeometry(0.07,0.17,0.09), polymer, [0,-0.14,0.18], [-0.35,0,0]));
-    mkHands(g, -0.32); addFlash(g, -0.98, 0.11); finishModel(g, "lmg", {x:0.3,y:-0.3,z:-0.64});
+    mkHands(g, -0.32); addFlash(g, -0.98, 0.11); finishModel(g, "lmg", {x:0.16,y:-0.22,z:-0.56});
   })();
 
   (() => { const g = new THREE.Group();   // FRAG GRENADE in hand
@@ -557,7 +557,7 @@
     g.add(part(new THREE.CylinderGeometry(0.04,0.04,0.06,8), metal, [0,0.11,-0.1]));
     g.add(part(new THREE.BoxGeometry(0.02,0.09,0.05), metal, [0.05,0.1,-0.1], [0,0,0.3]));
     g.add(part(new THREE.BoxGeometry(0.11,0.11,0.17), handMat, [0,-0.05,-0.08]));
-    finishModel(g, "grenade", {x:0.24,y:-0.3,z:-0.5});
+    finishModel(g, "grenade", {x:0.14,y:-0.24,z:-0.46});
   })();
 
   (() => { const g = new THREE.Group();   // MOLOTOV in hand
@@ -568,7 +568,7 @@
     g.add(part(new THREE.CylinderGeometry(0.03,0.03,0.08,8), glass, [0,0.15,-0.1]));
     g.add(part(new THREE.BoxGeometry(0.03,0.08,0.03), new THREE.MeshBasicMaterial({ color: 0xffb060 }), [0,0.22,-0.1]));
     g.add(part(new THREE.BoxGeometry(0.11,0.11,0.17), handMat, [0,-0.08,-0.06]));
-    finishModel(g, "molotov", {x:0.24,y:-0.3,z:-0.5});
+    finishModel(g, "molotov", {x:0.14,y:-0.24,z:-0.46});
   })();
 
   let gun = models.rifle, flash = models.rifle.userData.flash, flashLight = models.rifle.userData.flashLight;
