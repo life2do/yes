@@ -85,6 +85,12 @@
   .accent { color: #ffd23f; }
   .red { color: #ff5a4d; }
 
+  #weaponList { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; gap: 7px; pointer-events: none; }
+  #weaponList .w { font-size: 12px; letter-spacing: 1px; padding: 5px 10px; border: 1px solid rgba(255,255,255,0.14); border-radius: 4px; background: rgba(0,0,0,0.38); opacity: 0.5; white-space: nowrap; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
+  #weaponList .w.active { opacity: 1; border-color: #8bc34a; color: #e3f2c9; box-shadow: 0 0 12px rgba(139,195,74,0.3); }
+  #weaponList .w b { color: #8bc34a; margin-right: 5px; }
+  #weaponList .w .cnt { color: #ffd23f; margin-left: 4px; }
+
   #waveBanner {
     position: absolute; left: 50%; top: 28%; transform: translateX(-50%);
     text-align: center; opacity: 0; transition: opacity .4s;
@@ -138,10 +144,11 @@
     <div class="healthbar"><div id="healthFill"></div></div>
   </div>
   <div class="hud-br">
-    <div class="label">7.62 Rifle</div>
-    <div class="ammo" id="ammo"><span id="ammoMag">30</span><span class="mag"> / <span id="ammoReserve">120</span></span></div>
+    <div class="label" id="weaponName">7.62 Rifle</div>
+    <div class="ammo" id="ammo"><span id="ammoMag">30</span><span class="mag" id="ammoMagWrap"> / <span id="ammoReserve">120</span></span></div>
     <div id="reloadMsg"></div>
   </div>
+  <div id="weaponList"></div>
   <div class="hud-tl">
     <div class="stat"><span class="label">Kills</span><span id="kills" class="accent">0</span></div>
   </div>
@@ -163,6 +170,7 @@
     <b>Mouse</b><span>Look / aim</span>
     <b>Left click</b><span>Fire (hold for auto)</span>
     <b>Right click</b><span>Aim down scope (hold)</span>
+    <b>1–5 / Wheel</b><span>Switch weapon</span>
     <b>Shift</b><span>Sprint</span>
     <b>R</b><span>Reload</span>
     <b>Space</b><span>Jump</span>
@@ -188,7 +196,7 @@
 
   // Build timestamp — bumped on each commit so you can confirm the live
   // GitHub Page matches the latest push.
-  const BUILD = "2026-11-13 10:41 UTC";
+  const BUILD = "2026-11-13 10:53 UTC";
   const _stamp = document.getElementById("buildStamp");
   if (_stamp) _stamp.textContent = "BUILD " + BUILD;
 
@@ -361,30 +369,73 @@
   function addBarrier(x,z,w,d){ const h=1.2; const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), concMat); m.position.set(x,h/2,z); m.castShadow=true; m.receiveShadow=true; scene.add(m); obstacles.push({min:{x:x-w/2,z:z-d/2},max:{x:x+w/2,z:z+d/2}, top: h}); }
   addBarrier(-6,-14,8,1); addBarrier(12,4,1,8); addBarrier(-18,2,1,7); addBarrier(4,14,7,1);
 
-  // ---------- Viewmodel (gun) ----------
-  const gun = new THREE.Group();
+  // ---------- Viewmodels (one per weapon) ----------
   const metal = new THREE.MeshStandardMaterial({ color: 0x23251f, roughness: 0.5, metalness: 0.7 });
   const polymer = new THREE.MeshStandardMaterial({ color: 0x15170f, roughness: 0.8, metalness: 0.1 });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 0.6), polymer); body.position.set(0,0,-0.1); gun.add(body);
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 12), metal); barrel.rotation.x = Math.PI/2; barrel.position.set(0, 0.02, -0.5); gun.add(barrel);
-  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.22, 0.1), metal); mag.position.set(0, -0.15, 0.0); mag.rotation.x = 0.2; gun.add(mag);
-  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 0.22), polymer); stock.position.set(0, -0.01, 0.28); gun.add(stock);
-  const sight = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.06, 0.08), metal); sight.position.set(0, 0.1, -0.2); gun.add(sight);
-  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.16, 0.08), polymer); grip.position.set(0, -0.12, 0.16); grip.rotation.x = -0.35; gun.add(grip);
-  // hands (simple)
   const handMat = new THREE.MeshStandardMaterial({ color: 0x5a4636, roughness: 1 });
-  const handF = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.14), handMat); handF.position.set(0, -0.06, -0.26); gun.add(handF);
-  const handR = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.1, 0.1), handMat); handR.position.set(0, -0.14, 0.18); gun.add(handR);
-  gun.position.set(0.28, -0.26, -0.6);
-  gunScene.add(gun);
+  const models = {};
+  const part = (geo, mat, p, r) => { const m = new THREE.Mesh(geo, mat); if (p) m.position.set(p[0],p[1],p[2]); if (r) m.rotation.set(r[0],r[1],r[2]); return m; };
+  function addFlash(g, z, size) {
+    const fl = new THREE.Mesh(new THREE.SphereGeometry(size || 0.08, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffdd66, transparent: true, opacity: 0 }));
+    fl.position.set(0, 0.02, z); g.add(fl);
+    const fLight = new THREE.PointLight(0xffcc55, 0, 8); fLight.position.copy(fl.position); g.add(fLight);
+    g.userData.flash = fl; g.userData.flashLight = fLight;
+  }
+  function mkHands(g, fz) {
+    g.add(part(new THREE.BoxGeometry(0.09,0.09,0.14), handMat, [0,-0.06,fz]));
+    g.add(part(new THREE.BoxGeometry(0.09,0.1,0.1), handMat, [0,-0.14,0.18]));
+  }
+  function finishModel(g, name, rest) { g.position.set(rest.x, rest.y, rest.z); g.userData.rest = rest; g.visible = false; gunScene.add(g); models[name] = g; }
 
-  // Muzzle flash
-  const flash = new THREE.Mesh(
-    new THREE.SphereGeometry(0.08, 8, 8),
-    new THREE.MeshBasicMaterial({ color: 0xffdd66, transparent: true, opacity: 0 })
-  );
-  flash.position.set(0, 0.02, -0.78); gun.add(flash);
-  const flashLight = new THREE.PointLight(0xffcc55, 0, 8); flashLight.position.copy(flash.position); gun.add(flashLight);
+  (() => { const g = new THREE.Group();   // RIFLE
+    g.add(part(new THREE.BoxGeometry(0.1,0.12,0.6), polymer, [0,0,-0.1]));
+    g.add(part(new THREE.CylinderGeometry(0.02,0.02,0.5,12), metal, [0,0.02,-0.5], [Math.PI/2,0,0]));
+    g.add(part(new THREE.BoxGeometry(0.07,0.22,0.1), metal, [0,-0.15,0], [0.2,0,0]));
+    g.add(part(new THREE.BoxGeometry(0.08,0.1,0.22), polymer, [0,-0.01,0.28]));
+    g.add(part(new THREE.BoxGeometry(0.03,0.06,0.08), metal, [0,0.1,-0.2]));
+    g.add(part(new THREE.BoxGeometry(0.06,0.16,0.08), polymer, [0,-0.12,0.16], [-0.35,0,0]));
+    mkHands(g, -0.26); addFlash(g, -0.78, 0.08); finishModel(g, "rifle", {x:0.28,y:-0.26,z:-0.6});
+  })();
+
+  (() => { const g = new THREE.Group();   // PISTOL
+    g.add(part(new THREE.BoxGeometry(0.08,0.1,0.26), metal, [0,0,-0.06]));
+    g.add(part(new THREE.CylinderGeometry(0.015,0.015,0.1,10), metal, [0,0.02,-0.2], [Math.PI/2,0,0]));
+    g.add(part(new THREE.BoxGeometry(0.07,0.14,0.08), polymer, [0,-0.11,0.02], [-0.3,0,0]));
+    mkHands(g, -0.06); addFlash(g, -0.3, 0.055); finishModel(g, "pistol", {x:0.2,y:-0.22,z:-0.45});
+  })();
+
+  (() => { const g = new THREE.Group();   // LMG (machine gun)
+    g.add(part(new THREE.BoxGeometry(0.14,0.16,0.78), polymer, [0,0,-0.1]));
+    g.add(part(new THREE.CylinderGeometry(0.026,0.026,0.62,12), metal, [0,0.03,-0.62], [Math.PI/2,0,0]));
+    g.add(part(new THREE.BoxGeometry(0.18,0.22,0.2), metal, [0,-0.18,-0.02]));
+    g.add(part(new THREE.BoxGeometry(0.1,0.13,0.26), polymer, [0,-0.02,0.36]));
+    g.add(part(new THREE.BoxGeometry(0.04,0.07,0.1), metal, [0,0.13,-0.22]));
+    g.add(part(new THREE.BoxGeometry(0.07,0.17,0.09), polymer, [0,-0.14,0.18], [-0.35,0,0]));
+    mkHands(g, -0.32); addFlash(g, -0.98, 0.11); finishModel(g, "lmg", {x:0.3,y:-0.3,z:-0.64});
+  })();
+
+  (() => { const g = new THREE.Group();   // FRAG GRENADE in hand
+    const fragMat = new THREE.MeshStandardMaterial({ color: 0x2f3d22, roughness: 0.8 });
+    g.add(part(new THREE.SphereGeometry(0.1,12,10), fragMat, [0,0,-0.1]));
+    g.add(part(new THREE.CylinderGeometry(0.04,0.04,0.06,8), metal, [0,0.11,-0.1]));
+    g.add(part(new THREE.BoxGeometry(0.02,0.09,0.05), metal, [0.05,0.1,-0.1], [0,0,0.3]));
+    g.add(part(new THREE.BoxGeometry(0.11,0.11,0.17), handMat, [0,-0.05,-0.08]));
+    finishModel(g, "grenade", {x:0.24,y:-0.3,z:-0.5});
+  })();
+
+  (() => { const g = new THREE.Group();   // MOLOTOV in hand
+    const glass = new THREE.MeshStandardMaterial({ color: 0x5a7a3a, transparent: true, opacity: 0.75, roughness: 0.2 });
+    const liquid = new THREE.MeshStandardMaterial({ color: 0xcc5a1a, roughness: 0.4 });
+    g.add(part(new THREE.CylinderGeometry(0.06,0.06,0.26,12), glass, [0,0,-0.1]));
+    g.add(part(new THREE.CylinderGeometry(0.056,0.056,0.2,12), liquid, [0,-0.02,-0.1]));
+    g.add(part(new THREE.CylinderGeometry(0.03,0.03,0.08,8), glass, [0,0.15,-0.1]));
+    g.add(part(new THREE.BoxGeometry(0.03,0.08,0.03), new THREE.MeshBasicMaterial({ color: 0xffb060 }), [0,0.22,-0.1]));
+    g.add(part(new THREE.BoxGeometry(0.11,0.11,0.17), handMat, [0,-0.08,-0.06]));
+    finishModel(g, "molotov", {x:0.24,y:-0.3,z:-0.5});
+  })();
+
+  let gun = models.rifle, flash = models.rifle.userData.flash, flashLight = models.rifle.userData.flashLight;
+  gun.visible = true;
 
   // ---------- Enemies ----------
   const enemies = [];
@@ -442,7 +493,67 @@
   const EYE = 1.7, CROUCH = 0;
 
   // ---------- Weapon state ----------
-  const WEAPON = { mag: 30, magSize: 30, reserve: 120, fireRate: 95, reloading: false, reloadTime: 1700, lastShot: 0, recoil: 0, spread: 0.008, damage: 22, headMul: 2.6 };
+  const WEAPONS = {
+    rifle:   { name: "7.62 Rifle",   kind: "gun",   auto: true,  fireRate: 95,  magSize: 30,  mag: 30,  reserve: 120, reloadTime: 1700, lastShot: 0, reloading: false, recoil: 0, spread: 0.008, damage: 22, headMul: 2.6, canAds: true },
+    pistol:  { name: "Sidearm .45",  kind: "gun",   auto: false, fireRate: 135, magSize: 12,  mag: 12,  reserve: 72,  reloadTime: 1100, lastShot: 0, reloading: false, recoil: 0, spread: 0.003, damage: 34, headMul: 3.2, canAds: true },
+    lmg:     { name: "M249 LMG",     kind: "gun",   auto: true,  fireRate: 65,  magSize: 100, mag: 100, reserve: 200, reloadTime: 3200, lastShot: 0, reloading: false, recoil: 0, spread: 0.028, damage: 17, headMul: 1.8, canAds: true },
+    grenade: { name: "Frag Grenade", kind: "throw", throwType: "frag", count: 4, max: 8, cooldown: 650, lastThrow: 0, recoil: 0 },
+    molotov: { name: "Molotov",      kind: "throw", throwType: "fire", count: 3, max: 6, cooldown: 750, lastThrow: 0, recoil: 0 },
+  };
+  const WEAPON_ORDER = ["rifle", "pistol", "lmg", "grenade", "molotov"];
+  let curWeapon = "rifle";
+  let WEAPON = WEAPONS.rifle;
+
+  function resetWeapons() {
+    WEAPONS.rifle.mag = 30;  WEAPONS.rifle.reserve = 120;
+    WEAPONS.pistol.mag = 12; WEAPONS.pistol.reserve = 72;
+    WEAPONS.lmg.mag = 100;   WEAPONS.lmg.reserve = 200;
+    WEAPONS.grenade.count = 4; WEAPONS.molotov.count = 3;
+    for (const k in WEAPONS) { const w = WEAPONS[k]; w.reloading = false; w.recoil = 0; w.lastShot = 0; w.lastThrow = 0; }
+    curWeapon = "rifle"; WEAPON = WEAPONS.rifle;
+  }
+  function restockAmmo() {
+    WEAPONS.rifle.reserve  = Math.min(300, WEAPONS.rifle.reserve + 60);
+    WEAPONS.pistol.reserve = Math.min(144, WEAPONS.pistol.reserve + 36);
+    WEAPONS.lmg.reserve    = Math.min(400, WEAPONS.lmg.reserve + 100);
+    WEAPONS.grenade.count  = Math.min(WEAPONS.grenade.max, WEAPONS.grenade.count + 2);
+    WEAPONS.molotov.count  = Math.min(WEAPONS.molotov.max, WEAPONS.molotov.count + 1);
+    updateAmmo(); updateWeaponHud();
+  }
+
+  function setViewmodel(name) {
+    for (const k in models) models[k].visible = false;
+    gun = models[name];
+    flash = gun.userData.flash || null;
+    flashLight = gun.userData.flashLight || null;
+    gun.visible = !(ads && WEAPON.canAds);
+  }
+  function switchWeapon(name) {
+    if (!WEAPONS[name] || name === curWeapon) return;
+    curWeapon = name; WEAPON = WEAPONS[name];
+    if (!WEAPON.canAds && ads) setAds(false);
+    setViewmodel(name);
+    document.getElementById("reloadMsg").textContent = WEAPON.reloading ? "RELOADING…" : "";
+    updateAmmo(); updateWeaponHud(); playSwitch();
+  }
+  function buildWeaponList() {
+    const el = document.getElementById("weaponList"); el.innerHTML = "";
+    WEAPON_ORDER.forEach((name, i) => {
+      const w = WEAPONS[name];
+      const d = document.createElement("div"); d.className = "w"; d.dataset.name = name;
+      d.innerHTML = '<b>' + (i + 1) + '</b>' + w.name + (w.kind === "throw" ? ' <span class="cnt">×' + w.count + '</span>' : '');
+      el.appendChild(d);
+    });
+  }
+  function updateWeaponHud() {
+    document.getElementById("weaponName").textContent = WEAPON.name;
+    const el = document.getElementById("weaponList");
+    [...el.children].forEach(c => {
+      c.classList.toggle("active", c.dataset.name === curWeapon);
+      const w = WEAPONS[c.dataset.name];
+      if (w.kind === "throw") { const cnt = c.querySelector(".cnt"); if (cnt) cnt.textContent = "×" + w.count; }
+    });
+  }
 
   // ---------- Game state ----------
   const S = { MENU: 0, PLAY: 1, OVER: 2 };
@@ -454,7 +565,8 @@
   // ---------- Input ----------
   const keys = {};
   let pointerLocked = false;
-  let firing = false;
+  let firing = false, firePressed = false;
+  let shakeAmt = 0;
   let ads = false, curFov = 78, sensScale = 1;
   const HIP_FOV = 78, ADS_FOV = 40;
 
@@ -469,18 +581,26 @@
     keys[e.code] = true;
     if (e.code === "KeyR") reload();
     if (e.code === "Space") e.preventDefault();
+    if (e.code.startsWith("Digit")) { const n = +e.code.slice(5); if (n >= 1 && n <= WEAPON_ORDER.length) switchWeapon(WEAPON_ORDER[n - 1]); }
   });
   document.addEventListener("keyup", (e) => { keys[e.code] = false; });
 
   renderer.domElement.addEventListener("mousedown", (e) => {
-    if (e.button === 0) firing = true;
-    else if (e.button === 2 && pointerLocked && state === S.PLAY) setAds(true);
+    if (e.button === 0) { firing = true; firePressed = true; }
+    else if (e.button === 2 && pointerLocked && state === S.PLAY && WEAPON.canAds) setAds(true);
   });
   document.addEventListener("mouseup", (e) => {
     if (e.button === 0) firing = false;
     else if (e.button === 2) setAds(false);
   });
   renderer.domElement.addEventListener("contextmenu", (e) => e.preventDefault());
+  renderer.domElement.addEventListener("wheel", (e) => {
+    if (!pointerLocked || state !== S.PLAY) return;
+    e.preventDefault();
+    let i = WEAPON_ORDER.indexOf(curWeapon);
+    i = (i + (e.deltaY > 0 ? 1 : -1) + WEAPON_ORDER.length) % WEAPON_ORDER.length;
+    switchWeapon(WEAPON_ORDER[i]);
+  }, { passive: false });
 
   document.addEventListener("mousemove", (e) => {
     if (!pointerLocked) return;
@@ -504,6 +624,13 @@
   const raycaster = new THREE.Raycaster();
   const centerVec = new THREE.Vector2(0, 0);
 
+  function handleTriggers() {
+    if (!pointerLocked || state !== S.PLAY) return;
+    if (WEAPON.kind === "throw") { if (firePressed) throwItem(); return; }
+    if (WEAPON.auto) { if (firing) shoot(); }
+    else if (firePressed) shoot();
+  }
+
   function shoot() {
     const now = performance.now();
     if (WEAPON.reloading) return;
@@ -517,7 +644,7 @@
     // recoil & flash
     WEAPON.recoil = Math.min(WEAPON.recoil + (ads ? 0.025 : 0.04), 0.16);
     player.pitch += (0.012 + Math.random()*0.01) * (ads ? 0.55 : 1);
-    flash.material.opacity = 1; flashLight.intensity = 3;
+    if (flash) { flash.material.opacity = 1; flashLight.intensity = 3; }
     gun.position.z += 0.06; // kickback (eased back in update)
 
     // spread
@@ -625,6 +752,181 @@
     src.start(t); src.stop(t + 0.1);
   }
 
+  // ---------- Throwables: grenades & molotovs ----------
+  const throwables = [];
+  const fireZones = [];
+  const blasts = [];
+  const PI2 = Math.PI * 2;
+
+  function makeThrowMesh(type) {
+    if (type === "frag") {
+      return new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), new THREE.MeshStandardMaterial({ color: 0x2f3d22, roughness: 0.8 }));
+    }
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,0.26,10), new THREE.MeshStandardMaterial({ color: 0xcc5a1a, roughness: 0.4 })));
+    const rag = new THREE.Mesh(new THREE.BoxGeometry(0.04,0.1,0.04), new THREE.MeshBasicMaterial({ color: 0xff7a1a })); rag.position.y = 0.18; g.add(rag);
+    return g;
+  }
+
+  function throwItem() {
+    const now = performance.now();
+    if (now - (WEAPON.lastThrow || 0) < WEAPON.cooldown) return;
+    if (WEAPON.count <= 0) { playEmpty(); return; }
+    WEAPON.lastThrow = now; WEAPON.count--;
+    updateAmmo(); updateWeaponHud();
+    const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
+    const pos = camera.position.clone().add(dir.clone().multiplyScalar(0.6)); pos.y -= 0.12;
+    const vel = dir.clone().multiplyScalar(17); vel.y += 5.5;
+    const mesh = makeThrowMesh(WEAPON.throwType); mesh.position.copy(pos); scene.add(mesh);
+    throwables.push({ mesh, pos: pos.clone(), ppos: pos.clone(), vel, type: WEAPON.throwType,
+      fuse: WEAPON.throwType === "frag" ? 1.5 : 99, life: 0,
+      spin: new THREE.Vector3((Math.random()-0.5)*20, (Math.random()-0.5)*20, (Math.random()-0.5)*20) });
+    playThrow();
+    if (gun) gun.position.z += 0.12;
+  }
+
+  function insideObstacle(x, z, y) {
+    for (const o of obstacles) {
+      if (x >= o.min.x && x <= o.max.x && z >= o.min.z && z <= o.max.z && y <= (o.top || 6)) return true;
+    }
+    return false;
+  }
+
+  function updateThrowables(dt) {
+    for (let i = throwables.length - 1; i >= 0; i--) {
+      const t = throwables[i];
+      t.ppos.copy(t.pos);
+      t.vel.y -= 16 * dt;
+      t.pos.addScaledVector(t.vel, dt);
+      t.mesh.rotation.x += t.spin.x * dt; t.mesh.rotation.y += t.spin.y * dt;
+      t.life += dt;
+      let impact = false, ground = false;
+      if (t.pos.y <= 0.12) { t.pos.y = 0.12; ground = true; impact = true; }
+      if (!ground && insideObstacle(t.pos.x, t.pos.z, t.pos.y)) { t.pos.copy(t.ppos); impact = true; t.vel.x *= -0.4; t.vel.z *= -0.4; }
+      let enemyHit = false;
+      if (t.type === "fire") {
+        for (const e of enemies) { if (!e.userData.dead && dist2(t.pos.x, t.pos.z, e.position.x, e.position.z) < 0.9) { enemyHit = true; break; } }
+      }
+      if (t.type === "frag") {
+        if (ground) { t.vel.y *= -0.45; t.vel.x *= 0.65; t.vel.z *= 0.65; if (Math.abs(t.vel.y) < 0.6) t.vel.y = 0; }
+        t.fuse -= dt;
+        if (t.fuse <= 0 || t.life > 8) { explodeFrag(t.pos); scene.remove(t.mesh); throwables.splice(i, 1); continue; }
+      } else {
+        if (impact || enemyHit || t.life > 8) { igniteMolotov(t.pos); scene.remove(t.mesh); throwables.splice(i, 1); continue; }
+      }
+      t.mesh.position.copy(t.pos);
+    }
+  }
+
+  function explodeFrag(pos) {
+    const R = 6.5;
+    for (const e of enemies) {
+      if (e.userData.dead) continue;
+      const d = Math.hypot(e.position.x - pos.x, e.position.z - pos.z, (e.position.y + 1.1) - pos.y);
+      if (d < R) damageEnemy(e, 140 * (1 - d / R), new THREE.Vector3(e.position.x, 1.1, e.position.z), false);
+    }
+    const pd = Math.hypot(player.x - pos.x, player.z - pos.z, player.y - pos.y);
+    if (pd < R * 0.85) hurtPlayer(70 * (1 - pd / (R * 0.85)));
+    explosionFX(pos, 0xffb040);
+    shakeAmt = Math.min(0.4, shakeAmt + 0.32);
+    playExplosion();
+  }
+
+  function igniteMolotov(pos) {
+    explosionFX(pos, 0xff7a20);
+    const zone = { x: pos.x, z: pos.z, r: 3.6, life: 6, tick: 0, flames: [] };
+    const group = new THREE.Group(); group.position.set(pos.x, 0, pos.z);
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(zone.r, 24), new THREE.MeshBasicMaterial({ color: 0xff5a10, transparent: true, opacity: 0.3, side: THREE.DoubleSide }));
+    disc.rotation.x = -Math.PI / 2; disc.position.y = 0.06; group.add(disc); zone.disc = disc;
+    for (let i = 0; i < 12; i++) {
+      const c = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.9, 6), new THREE.MeshBasicMaterial({ color: Math.random() < 0.5 ? 0xff6a00 : 0xffb020, transparent: true, opacity: 0.85 }));
+      const a = Math.random() * PI2, rr = Math.random() * zone.r * 0.85;
+      c.position.set(Math.cos(a) * rr, 0.45, Math.sin(a) * rr); c.userData.ph = Math.random() * PI2;
+      group.add(c); zone.flames.push(c);
+    }
+    const fl = new THREE.PointLight(0xff6020, 3, 11); fl.position.set(0, 1.2, 0); group.add(fl); zone.light = fl;
+    scene.add(group); zone.group = group; fireZones.push(zone);
+    playFire();
+  }
+
+  function updateFireZones(dt) {
+    for (let i = fireZones.length - 1; i >= 0; i--) {
+      const z = fireZones[i];
+      z.life -= dt; z.tick += dt;
+      const fade = Math.min(1, z.life);
+      for (const c of z.flames) {
+        c.scale.y = 0.7 + Math.sin(performance.now() * 0.012 + c.userData.ph) * 0.35;
+        c.material.opacity = (0.55 + Math.random() * 0.3) * fade;
+      }
+      z.light.intensity = (2.4 + Math.random() * 1.2) * fade;
+      z.disc.material.opacity = 0.28 * fade;
+      if (z.tick >= 0.4) {
+        z.tick = 0;
+        for (const e of enemies) { if (!e.userData.dead && dist2(e.position.x, e.position.z, z.x, z.z) < z.r * z.r) damageEnemy(e, 15, new THREE.Vector3(e.position.x, 1, e.position.z), false); }
+        if (dist2(player.x, player.z, z.x, z.z) < z.r * z.r) hurtPlayer(7);
+      }
+      if (z.life <= 0) { scene.remove(z.group); fireZones.splice(i, 1); }
+    }
+  }
+
+  function explosionFX(pos, color) {
+    const s = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 }));
+    s.position.copy(pos); s.scale.setScalar(0.3); scene.add(s);
+    const light = new THREE.PointLight(color, 7, 22); light.position.copy(pos); light.position.y += 1; scene.add(light);
+    blasts.push({ mesh: s, light, life: 0.45, max: 0.45 });
+    for (let i = 0; i < 16; i++) {
+      const g = new THREE.Mesh(new THREE.SphereGeometry(0.08, 4, 4), new THREE.MeshBasicMaterial({ color: 0x3a2a18 }));
+      g.position.copy(pos);
+      const v = new THREE.Vector3((Math.random()-0.5), Math.random()*1.3, (Math.random()-0.5)).multiplyScalar(9);
+      scene.add(g); bloods.push({ m: g, v, life: 0.7 });
+    }
+  }
+
+  function updateBlasts(dt) {
+    for (let i = blasts.length - 1; i >= 0; i--) {
+      const b = blasts[i]; b.life -= dt;
+      const k = 1 - b.life / b.max;
+      b.mesh.scale.setScalar(0.3 + k * 6.5);
+      b.mesh.material.opacity = Math.max(0, b.life / b.max) * 0.85;
+      b.light.intensity = Math.max(0, b.life / b.max) * 7;
+      if (b.life <= 0) { scene.remove(b.mesh); scene.remove(b.light); blasts.splice(i, 1); }
+    }
+  }
+
+  // extra weapon sounds
+  function playThrow() {
+    if (!actx) return; const t = actx.currentTime;
+    const src = actx.createBufferSource(); src.buffer = noiseBuffer;
+    const lp = actx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.setValueAtTime(400, t); lp.frequency.exponentialRampToValueAtTime(1200, t + 0.15);
+    const g = actx.createGain(); g.gain.setValueAtTime(0.12, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    src.connect(lp); lp.connect(g); g.connect(masterGain); src.start(t); src.stop(t + 0.22);
+  }
+  function playSwitch() {
+    if (!actx) return; const t = actx.currentTime;
+    [0, 0.06].forEach((off, i) => {
+      const o = actx.createOscillator(); o.type = "square"; o.frequency.value = i ? 420 : 720;
+      const g = actx.createGain(); g.gain.setValueAtTime(0.07, t + off); g.gain.exponentialRampToValueAtTime(0.001, t + off + 0.04);
+      o.connect(g); g.connect(masterGain); o.start(t + off); o.stop(t + off + 0.05);
+    });
+  }
+  function playExplosion() {
+    if (!actx) return; const t = actx.currentTime;
+    const src = actx.createBufferSource(); src.buffer = noiseBuffer;
+    const lp = actx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.setValueAtTime(1800, t); lp.frequency.exponentialRampToValueAtTime(120, t + 0.4);
+    const g = actx.createGain(); g.gain.setValueAtTime(0.95, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+    src.connect(lp); lp.connect(g); g.connect(masterGain); src.start(t); src.stop(t + 0.55);
+    const o = actx.createOscillator(); o.type = "sine"; o.frequency.setValueAtTime(90, t); o.frequency.exponentialRampToValueAtTime(30, t + 0.4);
+    const og = actx.createGain(); og.gain.setValueAtTime(0.9, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+    o.connect(og); og.connect(masterGain); o.start(t); o.stop(t + 0.5);
+  }
+  function playFire() {
+    if (!actx) return; const t = actx.currentTime;
+    const src = actx.createBufferSource(); src.buffer = noiseBuffer;
+    const bp = actx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 800;
+    const g = actx.createGain(); g.gain.setValueAtTime(0.0, t); g.gain.linearRampToValueAtTime(0.25, t + 0.05); g.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+    src.connect(bp); bp.connect(g); g.connect(masterGain); src.start(t); src.stop(t + 0.65);
+  }
+
   function showHitmarker(isHead) {
     const hm = document.getElementById("hitmarker");
     hm.style.opacity = "1";
@@ -657,9 +959,17 @@
   }
 
   function updateAmmo() {
-    document.getElementById("ammoMag").textContent = WEAPON.mag;
-    document.getElementById("ammoReserve").textContent = WEAPON.reserve;
-    document.getElementById("ammo").classList.toggle("low", WEAPON.mag <= 6);
+    const ammoEl = document.getElementById("ammo");
+    if (WEAPON.kind === "throw") {
+      document.getElementById("ammoMag").textContent = "×" + WEAPON.count;
+      document.getElementById("ammoMagWrap").style.display = "none";
+      ammoEl.classList.toggle("low", WEAPON.count <= 0);
+    } else {
+      document.getElementById("ammoMag").textContent = WEAPON.mag;
+      document.getElementById("ammoReserve").textContent = WEAPON.reserve;
+      document.getElementById("ammoMagWrap").style.display = "";
+      ammoEl.classList.toggle("low", WEAPON.mag <= Math.max(5, Math.ceil(WEAPON.magSize * 0.2)));
+    }
   }
 
   // ---------- Player damage ----------
@@ -733,13 +1043,16 @@
     eBullets.forEach(b => scene.remove(b.mesh)); eBullets.length = 0;
     tracers.forEach(t => scene.remove(t.line)); tracers.length = 0;
     bloods.forEach(b => scene.remove(b.m)); bloods.length = 0;
+    throwables.forEach(t => scene.remove(t.mesh)); throwables.length = 0;
+    fireZones.forEach(z => scene.remove(z.group)); fireZones.length = 0;
+    blasts.forEach(b => { scene.remove(b.mesh); scene.remove(b.light); }); blasts.length = 0;
     player.x = 0; player.z = 10; player.y = EYE; player.vy = 0; player.yaw = Math.PI; player.pitch = 0; player.health = 100;
-    kills = 0; wave = 0; toSpawn = 0; waveActive = false; betweenWaves = 2;
-    WEAPON.mag = 30; WEAPON.reserve = 120; WEAPON.reloading = false; WEAPON.recoil = 0;
+    kills = 0; wave = 0; toSpawn = 0; waveActive = false; betweenWaves = 2; shakeAmt = 0;
+    resetWeapons(); setViewmodel("rifle");
     setAds(false); curFov = HIP_FOV; camera.fov = HIP_FOV; camera.updateProjectionMatrix();
     document.getElementById("kills").textContent = "0";
     document.getElementById("reloadMsg").textContent = "";
-    updateAmmo(); updateHealth();
+    updateAmmo(); updateWeaponHud(); updateHealth();
     requestLock();
   }
 
@@ -792,7 +1105,13 @@
     if (player.y <= EYE) { player.y = EYE; player.vy = 0; player.onGround = true; }
 
     // --- Camera ---
-    camera.position.set(player.x, player.y + bobY, player.z);
+    const sh = shakeAmt;
+    camera.position.set(
+      player.x + (Math.random()-0.5) * sh,
+      player.y + bobY + (Math.random()-0.5) * sh,
+      player.z + (Math.random()-0.5) * sh
+    );
+    shakeAmt *= Math.pow(0.02, dt);
     const dir = new THREE.Vector3(
       Math.sin(player.yaw) * Math.cos(player.pitch),
       Math.sin(player.pitch),
@@ -810,19 +1129,19 @@
     if (Math.abs(camera.fov - curFov) > 0.02) { camera.fov = curFov; camera.updateProjectionMatrix(); }
     sensScale = curFov / HIP_FOV; // slower, steadier aim while zoomed
 
-    // --- Firing ---
-    if (firing && pointerLocked) shoot();
+    // --- Firing / throwing ---
+    handleTriggers();
+    firePressed = false;
 
-    // recoil recover
-    WEAPON.recoil *= Math.pow(0.0001, dt);
-    flash.material.opacity *= Math.pow(0.0005, dt);
-    flashLight.intensity *= Math.pow(0.0005, dt);
-    // gun kick recover + sway
-    gun.position.z += (-0.6 - gun.position.z) * Math.min(1, dt*12);
+    // recoil recover + viewmodel sway
+    if (WEAPON.recoil !== undefined) WEAPON.recoil *= Math.pow(0.0001, dt);
+    if (flash) { flash.material.opacity *= Math.pow(0.0005, dt); flashLight.intensity *= Math.pow(0.0005, dt); }
+    const rest = gun.userData.rest;
+    gun.position.z += (rest.z - gun.position.z) * Math.min(1, dt*12);
     const sway = (len>0 && player.onGround) ? Math.sin(bob)*0.004 : 0;
-    gun.position.x += (0.28 + sway - gun.position.x) * Math.min(1, dt*10);
-    gun.position.y += (-0.26 + Math.cos(bob*0.5)*0.003 - gun.position.y) * Math.min(1, dt*10);
-    gun.rotation.z = -WEAPON.recoil * 0.3;
+    gun.position.x += (rest.x + sway - gun.position.x) * Math.min(1, dt*10);
+    gun.position.y += (rest.y + Math.cos(bob*0.5)*0.003 - gun.position.y) * Math.min(1, dt*10);
+    gun.rotation.z = -(WEAPON.recoil || 0) * 0.3;
 
     // --- Enemies ---
     const alivePos = [];
@@ -900,8 +1219,8 @@
         }
       } else if (enemies.filter(e => !e.userData.dead).length === 0) {
         waveActive = false; betweenWaves = 3.5;
-        showWaveBanner("WAVE CLEARED", "Resupplying… +ammo");
-        WEAPON.reserve = Math.min(300, WEAPON.reserve + 60); updateAmmo();
+        showWaveBanner("WAVE CLEARED", "Resupplying… +ammo & throwables");
+        restockAmmo();
       }
       updateEnemiesLeft();
     } else {
@@ -943,6 +1262,10 @@
       if (b.life <= 0) gone = true;
       if (gone) { scene.remove(b.mesh); eBullets.splice(i, 1); }
     }
+
+    updateThrowables(dt);
+    updateFireZones(dt);
+    updateBlasts(dt);
   }
 
   function animate() {
@@ -959,6 +1282,9 @@
   animate();
 
   // ---------- Ready ----------
+  buildWeaponList();
+  updateWeaponHud();
+  updateAmmo();
   const startBtn = document.getElementById("startBtn");
   startBtn.disabled = false;
   startBtn.textContent = "► Deploy";
