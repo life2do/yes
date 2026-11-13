@@ -214,7 +214,7 @@
 
   // Build timestamp — bumped on each commit so you can confirm the live
   // GitHub Page matches the latest push.
-  const BUILD = "2026-11-13 11:08 UTC";
+  const BUILD = "2026-11-13 11:19 UTC";
   const _stamp = document.getElementById("buildStamp");
   if (_stamp) _stamp.textContent = "BUILD " + BUILD;
 
@@ -350,17 +350,18 @@
   // ---------- World ----------
   const ARENA = 44; // half-size
   const obstacles = []; // {min:{x,z}, max:{x,z}} AABBs for collision
+  const solids = [];    // level geometry meshes used for hitscan/occlusion
 
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(ARENA*2, ARENA*2),
     new THREE.MeshStandardMaterial({ map: floorTex, roughness: 1 })
   );
-  floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor);
+  floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor); solids.push(floor);
 
   const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.9 });
   function addWall(x, z, w, d, h) {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
-    m.position.set(x, h/2, z); m.castShadow = true; m.receiveShadow = true; scene.add(m);
+    m.position.set(x, h/2, z); m.castShadow = true; m.receiveShadow = true; scene.add(m); solids.push(m);
     obstacles.push({ min: { x: x - w/2, z: z - d/2 }, max: { x: x + w/2, z: z + d/2 }, top: h });
   }
   // Perimeter walls
@@ -375,7 +376,7 @@
   const concMat = new THREE.MeshStandardMaterial({ color: 0x545a4c, roughness: 1 });
   function addCrate(x, z, s, mat) {
     const m = new THREE.Mesh(new THREE.BoxGeometry(s, s, s), mat || crateMat);
-    m.position.set(x, s/2, z); m.castShadow = true; m.receiveShadow = true; scene.add(m);
+    m.position.set(x, s/2, z); m.castShadow = true; m.receiveShadow = true; scene.add(m); solids.push(m);
     obstacles.push({ min: { x: x - s/2, z: z - s/2 }, max: { x: x + s/2, z: z + s/2 }, top: s });
   }
   const coverLayout = [
@@ -384,7 +385,7 @@
   ];
   coverLayout.forEach(([x,z,s], i) => addCrate(x, z, s, i % 3 === 0 ? concMat : crateMat));
   // low concrete barriers
-  function addBarrier(x,z,w,d){ const h=1.2; const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), concMat); m.position.set(x,h/2,z); m.castShadow=true; m.receiveShadow=true; scene.add(m); obstacles.push({min:{x:x-w/2,z:z-d/2},max:{x:x+w/2,z:z+d/2}, top: h}); }
+  function addBarrier(x,z,w,d){ const h=1.2; const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), concMat); m.position.set(x,h/2,z); m.castShadow=true; m.receiveShadow=true; scene.add(m); solids.push(m); obstacles.push({min:{x:x-w/2,z:z-d/2},max:{x:x+w/2,z:z+d/2}, top: h}); }
   addBarrier(-6,-14,8,1); addBarrier(12,4,1,8); addBarrier(-18,2,1,7); addBarrier(4,14,7,1);
 
   // ---------- Viewmodels (one per weapon) ----------
@@ -664,6 +665,14 @@
     else if (firePressed) shoot();
   }
 
+  // World-space position of the gun barrel tip, so tracers start there.
+  function muzzlePoint(forward) {
+    const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+    const up = new THREE.Vector3().crossVectors(right, forward).normalize();
+    const rx = ads ? 0.0 : 0.22, uy = ads ? -0.05 : -0.16, fz = 1.0;
+    return camera.position.clone().addScaledVector(right, rx).addScaledVector(up, uy).addScaledVector(forward, fz);
+  }
+
   function shoot() {
     const now = performance.now();
     if (WEAPON.reloading) return;
@@ -693,22 +702,21 @@
     const meshes = [];
     enemies.forEach(e => { if (!e.userData.dead) e.traverse(o => { if (o.isMesh) meshes.push(o); }); });
     const hits = raycaster.intersectObjects(meshes, false);
+    const worldHits = raycaster.intersectObjects(solids, false);
+    const worldDist = worldHits.length ? worldHits[0].distance : Infinity;
 
-    if (hits.length) {
-      // also check if a wall/crate is closer
-      const worldHits = raycaster.intersectObjects([floor, ...scene.children.filter(c => c.isMesh && c !== floor)], false);
-      const enemyDist = hits[0].distance;
-      let blocked = false;
-      for (const wh of worldHits) { if (wh.distance < enemyDist - 0.05) { blocked = true; break; } }
-      if (!blocked) {
-        const e = hits[0].object.userData.enemyRef;
-        const isHead = hits[0].object === e.userData.head;
-        const dmg = WEAPON.damage * (isHead ? WEAPON.headMul : 1);
-        damageEnemy(e, dmg, hits[0].point, isHead);
-      }
+    let endDist = Math.min(worldDist, 200);
+    if (hits.length && hits[0].distance <= worldDist + 0.05) {
+      const e = hits[0].object.userData.enemyRef;
+      const isHead = hits[0].object === e.userData.head;
+      const dmg = WEAPON.damage * (isHead ? WEAPON.headMul : 1);
+      damageEnemy(e, dmg, hits[0].point, isHead);
+      endDist = hits[0].distance;
     }
-    // tracer
-    spawnTracer(camera.position, dir);
+    // tracer travels from the barrel tip to the impact point
+    const start = muzzlePoint(dir);
+    const end = camera.position.clone().addScaledVector(dir, Math.min(endDist, 200));
+    spawnTracer(start, end);
   }
 
   function damageEnemy(e, dmg, point, isHead) {
@@ -734,14 +742,11 @@
 
   // ---------- FX ----------
   const tracers = [];
-  function spawnTracer(from, dir) {
-    const len = 60;
-    const geo = new THREE.BufferGeometry().setFromPoints([
-      from.clone(), from.clone().add(dir.clone().multiplyScalar(len))
-    ]);
-    const mat = new THREE.LineBasicMaterial({ color: 0xffdd88, transparent: true, opacity: 0.8 });
+  function spawnTracer(from, to) {
+    const geo = new THREE.BufferGeometry().setFromPoints([from.clone(), to.clone()]);
+    const mat = new THREE.LineBasicMaterial({ color: 0xffdd88, transparent: true, opacity: 0.85 });
     const line = new THREE.Line(geo, mat); scene.add(line);
-    tracers.push({ line, life: 0.06 });
+    tracers.push({ line, life: 0.05 });
   }
 
   const bloods = [];
@@ -1279,7 +1284,7 @@
           const from = new THREE.Vector3(e.position.x, 1.3, e.position.z);
           const toDir = new THREE.Vector3(player.x - e.position.x, player.y - 1.3, player.z - e.position.z).normalize();
           raycaster.set(from, toDir); raycaster.far = d;
-          const obstHits = raycaster.intersectObjects(scene.children.filter(c => c.isMesh && c !== floor && !c.userData.enemyRef), false);
+          const obstHits = raycaster.intersectObjects(solids, false);
           if (obstHits.length === 0) spawnEnemyBullet(from, d);
         }
       }
@@ -1312,7 +1317,7 @@
 
     // --- FX update ---
     for (let i = tracers.length - 1; i >= 0; i--) {
-      const t = tracers[i]; t.life -= dt; t.line.material.opacity = Math.max(0, t.life / 0.06) * 0.8;
+      const t = tracers[i]; t.life -= dt; t.line.material.opacity = Math.max(0, t.life / 0.05) * 0.85;
       if (t.life <= 0) { scene.remove(t.line); tracers.splice(i, 1); }
     }
     for (let i = bloods.length - 1; i >= 0; i--) {
