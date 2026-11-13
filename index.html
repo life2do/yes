@@ -214,7 +214,7 @@
 
   // Build timestamp — bumped on each commit so you can confirm the live
   // GitHub Page matches the latest push.
-  const BUILD = "2026-11-13 11:19 UTC";
+  const BUILD = "2026-11-13 13:54 UTC";
   const _stamp = document.getElementById("buildStamp");
   if (_stamp) _stamp.textContent = "BUILD " + BUILD;
 
@@ -313,6 +313,7 @@
   sun.shadow.camera.top = 60; sun.shadow.camera.bottom = -60;
   sun.shadow.camera.far = 140;
   scene.add(sun);
+  scene.add(sun.target); // moved with the player so shadows stay around them
   const amb = new THREE.AmbientLight(0x404840, 0.5);
   scene.add(amb);
 
@@ -331,7 +332,7 @@
     c.strokeStyle = "rgba(0,0,0,0.35)"; c.lineWidth = 2;
     for (let i = 0; i <= s; i += s/4) { c.beginPath(); c.moveTo(i,0); c.lineTo(i,s); c.moveTo(0,i); c.lineTo(s,i); c.stroke(); }
   }, 256);
-  floorTex.repeat.set(24, 24);
+  // floor texture repeat is set with the infinite ground below
 
   const wallTex = makeTexture((c, s) => {
     c.fillStyle = "#3b4033"; c.fillRect(0, 0, s, s);
@@ -347,46 +348,79 @@
     for (let i=0;i<400;i++){ c.fillStyle=`rgba(0,0,0,${Math.random()*0.15})`; c.fillRect(Math.random()*s,Math.random()*s,2,2); }
   }, 128);
 
-  // ---------- World ----------
-  const ARENA = 44; // half-size
-  const obstacles = []; // {min:{x,z}, max:{x,z}} AABBs for collision
-  const solids = [];    // level geometry meshes used for hitscan/occlusion
+  // ---------- World (infinite, chunk-generated) ----------
+  const obstacles = []; // active {min,max,top,mesh} AABBs (rebuilt as chunks load)
+  const solids = [];    // active level meshes for hitscan/occlusion (floor + chunk meshes)
 
+  const TILE = 8, FLOOR_SIZE = 260;
+  floorTex.repeat.set(FLOOR_SIZE / TILE, FLOOR_SIZE / TILE);
   const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(ARENA*2, ARENA*2),
+    new THREE.PlaneGeometry(FLOOR_SIZE, FLOOR_SIZE),
     new THREE.MeshStandardMaterial({ map: floorTex, roughness: 1 })
   );
-  floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor); solids.push(floor);
+  floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor);
 
-  const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.9 });
-  function addWall(x, z, w, d, h) {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
-    m.position.set(x, h/2, z); m.castShadow = true; m.receiveShadow = true; scene.add(m); solids.push(m);
-    obstacles.push({ min: { x: x - w/2, z: z - d/2 }, max: { x: x + w/2, z: z + d/2 }, top: h });
-  }
-  // Perimeter walls
-  const WH = 6;
-  addWall(0, -ARENA, ARENA*2, 2, WH);
-  addWall(0, ARENA, ARENA*2, 2, WH);
-  addWall(-ARENA, 0, 2, ARENA*2, WH);
-  addWall(ARENA, 0, 2, ARENA*2, WH);
-
-  // Cover crates / barriers scattered around
   const crateMat = new THREE.MeshStandardMaterial({ map: crateTex, roughness: 0.95 });
-  const concMat = new THREE.MeshStandardMaterial({ color: 0x545a4c, roughness: 1 });
-  function addCrate(x, z, s, mat) {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(s, s, s), mat || crateMat);
-    m.position.set(x, s/2, z); m.castShadow = true; m.receiveShadow = true; scene.add(m); solids.push(m);
-    obstacles.push({ min: { x: x - s/2, z: z - s/2 }, max: { x: x + s/2, z: z + s/2 }, top: s });
+  const concMat  = new THREE.MeshStandardMaterial({ color: 0x545a4c, roughness: 1 });
+
+  // deterministic per-chunk RNG, so terrain is stable when you revisit it
+  function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+  const CHUNK = 26, CHUNK_R = 3; // chunk size and generation radius (chunks) around player
+  const chunks = new Map();
+  let lastChunkX = NaN, lastChunkZ = NaN;
+
+  function buildChunk(cx, cz) {
+    const rng = mulberry32((((cx * 73856093) ^ (cz * 19349663)) >>> 0) || 1);
+    const group = new THREE.Group();
+    const obs = [];
+    const bx = cx * CHUNK, bz = cz * CHUNK;
+    const count = 2 + Math.floor(rng() * 4);
+    for (let i = 0; i < count; i++) {
+      const s = 2.0 + rng() * 1.4;
+      const x = bx + 1 + rng() * (CHUNK - 2);
+      const z = bz + 1 + rng() * (CHUNK - 2);
+      const m = new THREE.Mesh(new THREE.BoxGeometry(s, s, s), rng() < 0.4 ? concMat : crateMat);
+      m.position.set(x, s/2, z); m.castShadow = true; m.receiveShadow = true; group.add(m);
+      obs.push({ min: { x: x - s/2, z: z - s/2 }, max: { x: x + s/2, z: z + s/2 }, top: s, mesh: m });
+    }
+    if (rng() < 0.55) { // a low barrier for cover
+      const horiz = rng() < 0.5;
+      const w = horiz ? 4 + rng()*4 : 1, d = horiz ? 1 : 4 + rng()*4, h = 1.2;
+      const x = bx + 2 + rng() * (CHUNK - 4), z = bz + 2 + rng() * (CHUNK - 4);
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), concMat);
+      m.position.set(x, h/2, z); m.castShadow = true; m.receiveShadow = true; group.add(m);
+      obs.push({ min: { x: x - w/2, z: z - d/2 }, max: { x: x + w/2, z: z + d/2 }, top: h, mesh: m });
+    }
+    scene.add(group);
+    return { group, obs };
   }
-  const coverLayout = [
-    [-14,-10,3],[14,-12,3],[-20,8,2.4],[18,10,3],[0,0,2.6],[-8,18,2.2],[9,-20,2.6],
-    [24,-4,2.4],[-24,-16,3],[6,22,2.2],[-16,-22,2.4],[20,22,3],[-26,20,2.6],[28,16,2.2]
-  ];
-  coverLayout.forEach(([x,z,s], i) => addCrate(x, z, s, i % 3 === 0 ? concMat : crateMat));
-  // low concrete barriers
-  function addBarrier(x,z,w,d){ const h=1.2; const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), concMat); m.position.set(x,h/2,z); m.castShadow=true; m.receiveShadow=true; scene.add(m); solids.push(m); obstacles.push({min:{x:x-w/2,z:z-d/2},max:{x:x+w/2,z:z+d/2}, top: h}); }
-  addBarrier(-6,-14,8,1); addBarrier(12,4,1,8); addBarrier(-18,2,1,7); addBarrier(4,14,7,1);
+
+  function rebuildWorldLists() {
+    obstacles.length = 0; solids.length = 0; solids.push(floor);
+    for (const c of chunks.values()) for (const o of c.obs) { obstacles.push(o); solids.push(o.mesh); }
+  }
+
+  function updateChunks(force) {
+    const pcx = Math.floor(player.x / CHUNK), pcz = Math.floor(player.z / CHUNK);
+    if (!force && pcx === lastChunkX && pcz === lastChunkZ) return;
+    lastChunkX = pcx; lastChunkZ = pcz;
+    const needed = new Set();
+    for (let dz = -CHUNK_R; dz <= CHUNK_R; dz++) for (let dx = -CHUNK_R; dx <= CHUNK_R; dx++) {
+      const kx = pcx + dx, kz = pcz + dz, k = kx + "," + kz;
+      needed.add(k);
+      if (!chunks.has(k)) chunks.set(k, buildChunk(kx, kz));
+    }
+    for (const [k, c] of chunks) {
+      if (!needed.has(k)) { scene.remove(c.group); c.group.traverse(o => { if (o.geometry) o.geometry.dispose(); }); chunks.delete(k); }
+    }
+    rebuildWorldLists();
+  }
+
+  function resetWorld() {
+    for (const c of chunks.values()) scene.remove(c.group);
+    chunks.clear(); lastChunkX = NaN; lastChunkZ = NaN;
+  }
 
   // ---------- Viewmodels (one per weapon) ----------
   const metal = new THREE.MeshStandardMaterial({ color: 0x23251f, roughness: 0.5, metalness: 0.7 });
@@ -506,14 +540,10 @@
     if (kind === "heavy") { hp *= 2.2; spd *= 0.8; }
     else if (kind === "rusher") { hp *= 0.8; spd *= 1.9; } // fast but fragile
     const e = makeEnemy(hp, spd, tint, kind);
-    // spawn at edge, away from player
-    let ang, x, z, tries = 0;
-    do {
-      ang = Math.random() * Math.PI * 2;
-      x = Math.cos(ang) * (ARENA - 4); z = Math.sin(ang) * (ARENA - 4);
-      tries++;
-    } while (dist2(x, z, player.x, player.z) < 400 && tries < 10);
-    e.position.set(x, 0, z);
+    // spawn in a ring around the player (just inside the fog)
+    const ang = Math.random() * Math.PI * 2;
+    const rad = 28 + Math.random() * 10;
+    e.position.set(player.x + Math.cos(ang) * rad, 0, player.z + Math.sin(ang) * rad);
     scene.add(e); enemies.push(e);
   }
 
@@ -1093,9 +1123,6 @@
         px += (dx/d) * push; pz += (dz/d) * push;
       }
     }
-    // arena bounds
-    px = Math.max(-ARENA + 1.2, Math.min(ARENA - 1.2, px));
-    pz = Math.max(-ARENA + 1.2, Math.min(ARENA - 1.2, pz));
     return [px, pz];
   }
 
@@ -1116,6 +1143,7 @@
     blasts.forEach(b => { scene.remove(b.mesh); scene.remove(b.light); }); blasts.length = 0;
     player.x = 0; player.z = 10; player.y = EYE; player.vy = 0; player.yaw = Math.PI; player.pitch = 0; player.health = 100;
     player.onGround = true; jumpsLeft = 2; jumpPressed = false;
+    resetWorld(); updateChunks(true); // fresh infinite terrain around spawn
     kills = 0; wave = 0; toSpawn = 0; waveActive = false; betweenWaves = 2; shakeAmt = 0;
     resetWeapons(); setViewmodel("rifle");
     setAds(false); curFov = HIP_FOV; camera.fov = HIP_FOV; camera.updateProjectionMatrix();
@@ -1163,6 +1191,7 @@
     const feetY = player.y - EYE;
     [nx, nz] = resolveCollision(nx, nz, player.radius + 0.3, feetY);
     player.x = nx; player.z = nz;
+    updateChunks(); // generate/recycle terrain as the player roams
 
     // view bob
     if (len > 0 && player.onGround) bob += dt * (sprint ? 14 : 10);
@@ -1185,6 +1214,13 @@
       player.z + (Math.random()-0.5) * sh
     );
     shakeAmt *= Math.pow(0.02, dt);
+
+    // infinite ground + shadows follow the player
+    floor.position.set(player.x, 0, player.z);
+    floorTex.offset.set(player.x / TILE, player.z / TILE);
+    sun.position.set(player.x + 30, 50, player.z + 18);
+    sun.target.position.set(player.x, 0, player.z);
+    sun.target.updateMatrixWorld();
     const dir = new THREE.Vector3(
       Math.sin(player.yaw) * Math.cos(player.pitch),
       Math.sin(player.pitch),
@@ -1337,7 +1373,7 @@
       if (dx*dx + dz*dz < 0.5*0.5 && b.pos.y > 0.2 && b.pos.y < 1.95) { hurtPlayer(b.dmg); gone = true; }
       if (!gone) {
         if (b.pos.y <= 0.05) gone = true;                              // ground
-        else if (Math.abs(b.pos.x) > ARENA || Math.abs(b.pos.z) > ARENA) gone = true; // out of bounds
+        else if (dist2(b.pos.x, b.pos.z, player.x, player.z) > 60 * 60) gone = true; // far away
         else {
           for (const o of obstacles) {                                // cover / walls
             if (b.pos.x >= o.min.x && b.pos.x <= o.max.x &&
