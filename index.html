@@ -136,6 +136,23 @@
   .big-stat { font-size: 30px; font-weight: 700; }
   .loading { opacity: 0.6; letter-spacing: 3px; font-size: 14px; }
   #hud.hidden { display: none; }
+
+  /* Multiplayer lobby */
+  #mpBox { margin-top: 10px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .mp-row { display: flex; gap: 10px; align-items: center; }
+  .mp-btn { pointer-events: auto; margin: 0; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+    color: #cfe8d0; background: rgba(139,195,74,0.12); border: 1px solid rgba(139,195,74,0.5);
+    padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 13px; box-shadow: none; }
+  .mp-btn:hover { transform: translateY(-1px); background: rgba(139,195,74,0.2); box-shadow: 0 6px 18px rgba(139,195,74,0.2); }
+  #codeInput { pointer-events: auto; font: inherit; font-weight: 700; letter-spacing: 6px; text-transform: uppercase; text-align: center;
+    width: 120px; padding: 9px 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.3); background: rgba(0,0,0,0.4); color: #fff; }
+  .mp-status { font-size: 13px; letter-spacing: 1px; opacity: 0.8; min-height: 18px; max-width: 420px; text-align: center; }
+  .mp-status .code { color: #ffd23f; font-size: 22px; letter-spacing: 6px; font-weight: 700; }
+  .mp-status.err { color: #ff5a4d; }
+  .mp-status.ok { color: #8bc34a; }
+  #coopHud { position: absolute; left: 50%; top: 52px; transform: translateX(-50%); text-align: center; font-size: 13px; letter-spacing: 2px; text-shadow: 0 2px 6px rgba(0,0,0,0.8); }
+  #coopHud .ally { color: #5aa0ff; }
+  #coopHud.hidden { display: none; }
 </style>
 </head>
 <body>
@@ -177,6 +194,7 @@
     <div id="killfeed" style="margin-top:12px"></div>
   </div>
   <div id="waveBanner"><div class="big" id="waveBig">WAVE 1</div><div class="small" id="waveSmall">Hostiles inbound</div></div>
+  <div id="coopHud" class="hidden"><span class="ally" id="allyLabel">● Ally</span> <span id="allyHp">100</span></div>
 </div>
 
 <div id="startScreen" class="screen">
@@ -195,6 +213,19 @@
     <b>Esc</b><span>Release mouse</span>
   </div>
   <button id="startBtn" disabled>Loading…</button>
+
+  <div id="mpBox">
+    <div class="mp-row">
+      <button id="hostBtn" class="mp-btn">Host Co-op</button>
+      <button id="joinToggle" class="mp-btn">Join Co-op</button>
+    </div>
+    <div id="joinRow" class="mp-row hidden">
+      <input id="codeInput" maxlength="4" placeholder="CODE" autocomplete="off" />
+      <button id="joinGo" class="mp-btn">Connect</button>
+    </div>
+    <div id="mpStatus" class="mp-status">Online co-op · experimental · play with a friend via a room code</div>
+  </div>
+
   <div class="loading" id="startHigh"></div>
   <div class="loading" id="buildStamp" style="opacity:.45;font-size:12px;letter-spacing:2px;margin-top:4px"></div>
 </div>
@@ -208,13 +239,14 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
 (() => {
   "use strict";
 
   // Build timestamp — bumped on each commit so you can confirm the live
   // GitHub Page matches the latest push.
-  const BUILD = "2026-11-13 14:27 UTC";
+  const BUILD = "2026-11-13 14:34 UTC";
   const _stamp = document.getElementById("buildStamp");
   if (_stamp) _stamp.textContent = "BUILD " + BUILD;
 
@@ -628,10 +660,12 @@
     if (kind === "heavy") { hp *= 2.2; spd *= 0.8; }
     else if (kind === "rusher") { hp *= 0.8; spd *= 1.9; } // fast but fragile
     const e = makeEnemy(hp, spd, tint, kind);
-    // spawn in a ring around the player (just inside the fog)
+    e.userData.id = ++enemyIdSeq;
+    // spawn in a ring around a random live player (just inside the fog)
+    const around = (net.role === "host" && Math.random() < 0.5) ? net.join : player;
     const ang = Math.random() * Math.PI * 2;
     const rad = 28 + Math.random() * 10;
-    e.position.set(player.x + Math.cos(ang) * rad, 0, player.z + Math.sin(ang) * rad);
+    e.position.set((around.x || player.x) + Math.cos(ang) * rad, 0, (around.z || player.z) + Math.sin(ang) * rad);
     scene.add(e); enemies.push(e);
   }
 
@@ -711,8 +745,173 @@
   const S = { MENU: 0, PLAY: 1, OVER: 2 };
   let state = S.MENU;
   let kills = 0, wave = 0, toSpawn = 0, spawnTimer = 0, waveActive = false, betweenWaves = 0;
+  let enemyIdSeq = 0, ebIdSeq = 0;
 
   function dist2(ax, az, bx, bz) { const dx = ax - bx, dz = az - bz; return dx*dx + dz*dz; }
+
+  // ---------- Networking (experimental P2P co-op via PeerJS/WebRTC) ----------
+  const net = {
+    role: "sp",            // 'sp' | 'host' | 'join'
+    peer: null, conn: null,
+    join: { x: 2, y: 0, z: 10, ry: Math.PI }, // joiner's pose (host-side knowledge)
+    joinHp: 100, joinHit: 0,
+    remote: { x: 0, y: 0, z: 10, ry: Math.PI, hp: 100 }, // other player's pose for avatar
+    ally: null,
+    enemyMap: new Map(), ebMap: new Map(),
+    lastSnap: 0, lastIn: 0,
+  };
+  const KIND_CODE = { soldier: 0, heavy: 1, rusher: 2 };
+  const CODE_KIND = ["soldier", "heavy", "rusher"];
+  function kindTint(k) { return k === "rusher" ? 0xcf4a2a : k === "heavy" ? 0x8b2f2f : 0x4a5239; }
+
+  function netSend(msg) { if (net.conn && net.conn.open) { try { net.conn.send(msg); } catch (e) {} } }
+
+  function setMpStatus(txt, cls) {
+    const el = document.getElementById("mpStatus");
+    el.className = "mp-status" + (cls ? " " + cls : "");
+    el.innerHTML = txt;
+  }
+
+  function hostCoop() {
+    if (typeof Peer === "undefined") { setMpStatus("Multiplayer library failed to load — refresh and retry.", "err"); return; }
+    initAudio();
+    const code = Array.from({ length: 4 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random()*32)]).join("");
+    setMpStatus("Starting host…");
+    try { net.peer = new Peer("sbstrike-" + code); } catch (e) { setMpStatus("Could not start host.", "err"); return; }
+    net.peer.on("open", () => {
+      setMpStatus('Share this code: <span class="code">' + code + "</span><br/>Waiting for a player to join…");
+    });
+    net.peer.on("error", (err) => { setMpStatus("Host error: " + (err && err.type ? err.type : "unknown") + ". Try again.", "err"); });
+    net.peer.on("connection", (conn) => {
+      net.conn = conn;
+      conn.on("open", () => {
+        conn.on("data", onNetData);
+        conn.on("close", onNetClose);
+        setMpStatus("Player connected — launching co-op!", "ok");
+        netSend({ t: "start" });
+        startCoop("host");
+      });
+    });
+  }
+
+  function joinCoop(code) {
+    if (typeof Peer === "undefined") { setMpStatus("Multiplayer library failed to load — refresh and retry.", "err"); return; }
+    if (!code || code.length < 3) { setMpStatus("Enter the host's code.", "err"); return; }
+    initAudio();
+    setMpStatus("Connecting to " + code + "…");
+    try { net.peer = new Peer(); } catch (e) { setMpStatus("Could not start client.", "err"); return; }
+    net.peer.on("open", () => {
+      const conn = net.peer.connect("sbstrike-" + code, { reliable: false });
+      net.conn = conn;
+      conn.on("open", () => {
+        conn.on("data", onNetData);
+        conn.on("close", onNetClose);
+        setMpStatus("Connected — waiting for host to start…", "ok");
+      });
+      conn.on("error", () => setMpStatus("Connection failed. Check the code / network.", "err"));
+    });
+    net.peer.on("error", (err) => { setMpStatus("Join error: " + (err && err.type ? err.type : "unknown") + ".", "err"); });
+  }
+
+  function onNetClose() {
+    if (state === S.PLAY) setMpStatus("Co-op partner disconnected.", "err");
+  }
+
+  function startCoop(role) {
+    net.role = role;
+    net.joinHp = 100; net.joinHit = 0;
+    net.enemyMap.clear(); net.ebMap.clear();
+    startGame();
+  }
+
+  function onNetData(msg) {
+    if (!msg || !msg.t) return;
+    if (msg.t === "start") { startCoop("join"); return; }
+    if (msg.t === "over") { if (net.role === "join" && state === S.PLAY) gameOver(); return; }
+    if (net.role === "host") {
+      if (msg.t === "in") { net.join.x = msg.x; net.join.y = msg.y; net.join.z = msg.z; net.join.ry = msg.ry; net.remote = { x: msg.x, y: msg.y, z: msg.z, ry: msg.ry, hp: net.joinHp }; }
+      else if (msg.t === "hit") { const e = findEnemyById(msg.id); if (e && !e.userData.dead) damageEnemy(e, msg.dmg, e.position.clone().setY(e.position.y + 1.1), msg.head); }
+    } else if (net.role === "join") {
+      if (msg.t === "snap") applySnapshot(msg);
+    }
+  }
+
+  function findEnemyById(id) { for (const e of enemies) if (e.userData.id === id) return e; return null; }
+
+  function buildSnapshot() {
+    const e = [];
+    for (const en of enemies) {
+      const u = en.userData;
+      e.push([u.id, +en.position.x.toFixed(2), +en.position.y.toFixed(2), +en.position.z.toFixed(2), +en.rotation.y.toFixed(2), KIND_CODE[u.kind] || 0, u.dead ? 1 : 0]);
+    }
+    const b = [];
+    for (const bl of eBullets) b.push([bl.id, +bl.pos.x.toFixed(2), +bl.pos.y.toFixed(2), +bl.pos.z.toFixed(2)]);
+    return { t: "snap", e, b, w: wave, k: kills, jx: Math.round(net.joinHp), hh: Math.round(player.health),
+      hx: +player.x.toFixed(2), hy: +(player.y - EYE).toFixed(2), hz: +player.z.toFixed(2), hr: +player.yaw.toFixed(2),
+      over: state === S.OVER ? 1 : 0 };
+  }
+
+  function applySnapshot(s) {
+    const seen = new Set();
+    for (const row of s.e) {
+      const [id, x, y, z, ry, kc, dd] = row; seen.add(id);
+      let e = net.enemyMap.get(id);
+      if (!e) {
+        const kn = CODE_KIND[kc] || "soldier";
+        e = makeEnemy(1, 1, kindTint(kn), kn);
+        e.userData.id = id; e.position.set(x, y, z); e.rotation.y = ry;
+        scene.add(e); enemies.push(e); net.enemyMap.set(id, e);
+      }
+      e.userData.netTarget = { x, y, z, ry };
+      if (dd && !e.userData.dead) { e.userData.dead = true; e.userData.fallAxis = Math.random() < 0.5 ? 1 : -1; e.userData.deadT = 0; }
+    }
+    for (const [id, e] of net.enemyMap) {
+      if (!seen.has(id) && !e.userData.dead) { scene.remove(e); const idx = enemies.indexOf(e); if (idx >= 0) enemies.splice(idx, 1); net.enemyMap.delete(id); }
+    }
+    const seenB = new Set();
+    for (const row of s.b) {
+      const [id, x, y, z] = row; seenB.add(id);
+      let m = net.ebMap.get(id);
+      if (!m) { m = new THREE.Mesh(eBulletGeo, eBulletMat); m.add(new THREE.Mesh(eBulletGlow, eBulletGlowMat)); scene.add(m); net.ebMap.set(id, m); }
+      m.position.set(x, y, z);
+    }
+    for (const [id, m] of net.ebMap) { if (!seenB.has(id)) { scene.remove(m); net.ebMap.delete(id); } }
+
+    document.getElementById("wave").textContent = s.w;
+    document.getElementById("kills").textContent = s.k;
+    wave = s.w; kills = s.k;
+    net.remote = { x: s.hx, y: s.hy, z: s.hz, ry: s.hr, hp: s.hh };
+    const prevHp = player.health;
+    player.health = s.jx;
+    if (s.jx < prevHp) {
+      const d = document.getElementById("dmg");
+      d.style.boxShadow = "inset 0 0 160px 50px rgba(180,0,0,0.4)";
+      setTimeout(() => d.style.boxShadow = "inset 0 0 160px 40px rgba(180,0,0,0)", 130);
+    }
+    updateHealth();
+    if ((s.over || s.jx <= 0) && state === S.PLAY) gameOver();
+  }
+
+  function ensureAlly() {
+    if (net.ally) return;
+    net.ally = makeEnemy(1, 1, 0x2a6cff, "soldier"); // friendly blue teammate
+    net.ally.traverse(o => { if (o.userData) o.userData.enemyRef = null; }); // not targetable/shootable
+    scene.add(net.ally);
+  }
+  function clearNetObjects() {
+    net.enemyMap.clear();
+    for (const m of net.ebMap.values()) scene.remove(m);
+    net.ebMap.clear();
+    if (net.ally) { scene.remove(net.ally); net.ally = null; }
+  }
+  function updateCoopHud() {
+    if (net.role === "sp") return;
+    ensureAlly();
+    net.ally.position.set(net.remote.x, net.remote.y, net.remote.z);
+    net.ally.rotation.y = net.remote.ry;
+    const hp = net.role === "host" ? net.joinHp : net.remote.hp;
+    document.getElementById("allyHp").textContent = Math.max(0, Math.round(hp));
+  }
 
   // ---------- Input ----------
   const keys = {};
@@ -838,6 +1037,12 @@
   }
 
   function damageEnemy(e, dmg, point, isHead) {
+    if (net.role === "join") {
+      // joiner isn't authoritative: report the hit to the host, show local feedback only
+      showHitmarker(isHead); bloodBurst(point, isHead);
+      if (e.userData.id != null) netSend({ t: "hit", id: e.userData.id, dmg, head: isHead });
+      return;
+    }
     e.userData.hp -= dmg;
     e.userData.hitT = 0.12;
     showHitmarker(isHead);
@@ -878,10 +1083,10 @@
     }
   }
 
-  function spawnEnemyBullet(from, d) {
+  function spawnEnemyBullet(from, d, aimAt) {
     // Inaccuracy: more spread at range, tightening slightly as waves escalate.
     const spread = Math.max(0.02, 0.085 + d * 0.004 - wave * 0.002);
-    const target = new THREE.Vector3(player.x, player.y - 0.4, player.z);
+    const target = aimAt || new THREE.Vector3(player.x, player.y - 0.4, player.z);
     const dir = target.clone().sub(from).normalize();
     dir.x += (Math.random() - 0.5) * spread;
     dir.y += (Math.random() - 0.5) * spread * 0.6;
@@ -892,7 +1097,7 @@
     mesh.add(glow);
     mesh.position.copy(from);
     scene.add(mesh);
-    eBullets.push({ mesh, pos: from.clone(), vel: dir.multiplyScalar(40), life: 2.4, dmg: (d < 5 ? 13 : 8) + wave * 0.5 });
+    eBullets.push({ id: ++ebIdSeq, mesh, pos: from.clone(), vel: dir.multiplyScalar(40), life: 2.4, dmg: (d < 5 ? 13 : 8) + wave * 0.5 });
     playEnemyShot();
   }
 
@@ -1150,6 +1355,7 @@
   // ---------- Player damage ----------
   function hurtPlayer(amount) {
     if (state !== S.PLAY) return;
+    if (net.role === "join") return; // joiner's health is host-authoritative (from snapshots)
     player.health -= amount;
     player.lastHit = performance.now();
     const dmg = document.getElementById("dmg");
@@ -1157,6 +1363,11 @@
     setTimeout(() => dmg.style.boxShadow = "inset 0 0 160px 40px rgba(180,0,0,0)", 130);
     updateHealth();
     if (player.health <= 0) gameOver();
+  }
+  // host applies damage to whichever player an enemy targeted
+  function damageTarget(tgt, amount) {
+    if (tgt === "join") { net.joinHp = Math.max(0, net.joinHp - amount); net.joinHit = performance.now(); }
+    else hurtPlayer(amount);
   }
   function updateHealth() {
     const h = Math.max(0, player.health);
@@ -1242,20 +1453,31 @@
     throwables.forEach(t => scene.remove(t.mesh)); throwables.length = 0;
     fireZones.forEach(z => scene.remove(z.group)); fireZones.length = 0;
     blasts.forEach(b => { scene.remove(b.mesh); scene.remove(b.light); }); blasts.length = 0;
-    player.x = 0; player.z = 10; player.y = EYE; player.vy = 0; player.yaw = Math.PI; player.pitch = 0; player.health = 100;
+    clearNetObjects();
+    enemyIdSeq = 0; ebIdSeq = 0;
+    // co-op players spawn a couple of metres apart
+    const spawnX = net.role === "join" ? 3 : 0;
+    player.x = spawnX; player.z = 10; player.y = EYE; player.vy = 0; player.yaw = Math.PI; player.pitch = 0; player.health = 100;
     player.onGround = true; jumpsLeft = 2; jumpPressed = false;
+    net.join = { x: 3, y: 0, z: 10, ry: Math.PI }; net.joinHp = 100; net.joinHit = 0;
+    net.remote = { x: 0, y: 0, z: 10, ry: Math.PI, hp: 100 };
     resetWorld(); updateChunks(true); // fresh infinite terrain around spawn
     kills = 0; wave = 0; toSpawn = 0; waveActive = false; betweenWaves = 2; shakeAmt = 0;
     resetWeapons(); setViewmodel("rifle");
     setAds(false); curFov = HIP_FOV; camera.fov = HIP_FOV; camera.updateProjectionMatrix();
     document.getElementById("kills").textContent = "0";
     document.getElementById("reloadMsg").textContent = "";
+    const coop = document.getElementById("coopHud");
+    coop.classList.toggle("hidden", net.role === "sp");
+    document.getElementById("allyLabel").textContent = net.role === "host" ? "● Joiner" : net.role === "join" ? "● Host" : "● Ally";
     updateAmmo(); updateWeaponHud(); updateHealth();
     requestLock();
   }
 
   function gameOver() {
     state = S.OVER;
+    if (net.role === "host") netSend({ t: "over" }); // end co-op for the joiner too
+    document.getElementById("coopHud").classList.add("hidden");
     document.exitPointerLock();
     document.getElementById("finalKills").textContent = kills;
     document.getElementById("finalWave").textContent = wave;
@@ -1265,8 +1487,24 @@
     document.getElementById("overScreen").classList.remove("hidden");
   }
 
-  document.getElementById("startBtn").addEventListener("click", startGame);
-  document.getElementById("againBtn").addEventListener("click", startGame);
+  function soloStart() {
+    net.role = "sp";
+    if (net.conn) { try { net.conn.close(); } catch (e) {} net.conn = null; }
+    if (net.peer) { try { net.peer.destroy(); } catch (e) {} net.peer = null; }
+    startGame();
+  }
+  document.getElementById("startBtn").addEventListener("click", soloStart);
+  document.getElementById("againBtn").addEventListener("click", soloStart);
+
+  // Multiplayer lobby wiring
+  document.getElementById("hostBtn").addEventListener("click", hostCoop);
+  document.getElementById("joinToggle").addEventListener("click", () => {
+    document.getElementById("joinRow").classList.toggle("hidden");
+    document.getElementById("codeInput").focus();
+  });
+  document.getElementById("codeInput").addEventListener("input", (e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""); });
+  document.getElementById("joinGo").addEventListener("click", () => joinCoop(document.getElementById("codeInput").value.trim()));
+  document.getElementById("codeInput").addEventListener("keydown", (e) => { if (e.key === "Enter") joinCoop(e.target.value.trim()); });
 
   // ---------- Main loop ----------
   const clock = new THREE.Clock();
@@ -1367,7 +1605,7 @@
         e.rotation.z += u.fallAxis * dt * 3;
         e.rotation.z = Math.max(-Math.PI/2, Math.min(Math.PI/2, e.rotation.z));
         e.position.y -= dt * 0.4;
-        if (u.deadT > 1.4) { scene.remove(e); enemies.splice(i, 1); }
+        if (u.deadT > 1.4) { scene.remove(e); enemies.splice(i, 1); if (u.id != null) net.enemyMap.delete(u.id); }
         continue;
       }
       // hit flash
@@ -1375,8 +1613,30 @@
       else { u.torso.material.emissiveIntensity = 0; }
       if (u.gunFlash) u.gunFlash.material.opacity *= Math.pow(0.0004, dt); // fade muzzle flash
 
-      // move toward player
-      const dx = player.x - e.position.x, dz = player.z - e.position.z;
+      // Joiner is a client: enemies come from host snapshots, no local AI.
+      if (net.role === "join") {
+        const nt = u.netTarget;
+        if (nt) {
+          const k = Math.min(1, dt * 12);
+          e.position.x += (nt.x - e.position.x) * k;
+          e.position.y += (nt.y - e.position.y) * k;
+          e.position.z += (nt.z - e.position.z) * k;
+          e.rotation.y = nt.ry;
+          u.walk += dt * (u.kind === "rusher" ? 15 : 8);
+          const amp = u.kind === "rusher" ? 0.95 : 0.6;
+          u.legL.rotation.x = Math.sin(u.walk) * amp; u.legR.rotation.x = -Math.sin(u.walk) * amp;
+        }
+        continue;
+      }
+
+      // host/solo: choose the nearest player as the target
+      let tx = player.x, tz = player.z, tfeet = player.y - EYE, tgt = "host";
+      if (net.role === "host") {
+        if (dist2(e.position.x, e.position.z, net.join.x, net.join.z) < dist2(e.position.x, e.position.z, player.x, player.z)) {
+          tx = net.join.x; tz = net.join.z; tfeet = net.join.y; tgt = "join";
+        }
+      }
+      const dx = tx - e.position.x, dz = tz - e.position.z;
       const d = Math.hypot(dx, dz) || 0.0001;
       const isRush = u.kind === "rusher";
       e.userData.walk += dt * (isRush ? 15 : 8);
@@ -1413,11 +1673,11 @@
         const reach = -1.1 - u.lunge * 0.9;
         u.armL.rotation.x = reach; u.armR.rotation.x = reach;
         u.meleeCd -= dt;
-        if (d < 2.4 && Math.abs(e.position.y - (player.y - EYE)) < 1.6 && u.meleeCd <= 0) {
+        if (d < 2.4 && Math.abs(e.position.y - tfeet) < 1.6 && u.meleeCd <= 0) {
           u.meleeCd = 0.9;
           u.lunge = 1;
-          hurtPlayer(16 + wave * 0.6);
-          shakeAmt = Math.min(0.3, shakeAmt + 0.16);
+          damageTarget(tgt, 16 + wave * 0.6);
+          if (tgt === "host") shakeAmt = Math.min(0.3, shakeAmt + 0.16);
           playMelee();
         }
       } else {
@@ -1427,23 +1687,27 @@
         if (u.fireCd <= 0 && d < 26) {
           u.fireCd = 1.1 + Math.random() * 1.2;
           const from = new THREE.Vector3(e.position.x, e.position.y + 1.3, e.position.z);
-          const toDir = new THREE.Vector3(player.x - e.position.x, player.y - (e.position.y + 1.3), player.z - e.position.z).normalize();
+          const toDir = new THREE.Vector3(tx - e.position.x, (tfeet + 1.3) - (e.position.y + 1.3), tz - e.position.z).normalize();
           raycaster.set(from, toDir); raycaster.far = d;
           const obstHits = raycaster.intersectObjects(solids, false);
-          if (obstHits.length === 0) { spawnEnemyBullet(from, d); if (u.gunFlash) u.gunFlash.material.opacity = 1; }
+          if (obstHits.length === 0) { spawnEnemyBullet(from, d, new THREE.Vector3(tx, tfeet + 1.1, tz)); if (u.gunFlash) u.gunFlash.material.opacity = 1; }
         }
       }
       alivePos.push(e);
     }
 
     // --- Health regen ---
-    if (performance.now() - player.lastHit > 4000 && player.health < 100) {
+    if (net.role !== "join" && performance.now() - player.lastHit > 4000 && player.health < 100) {
       player.health = Math.min(100, player.health + 12 * dt);
       updateHealth();
     }
+    if (net.role === "host" && performance.now() - net.joinHit > 4000 && net.joinHp < 100) {
+      net.joinHp = Math.min(100, net.joinHp + 12 * dt);
+    }
 
-    // --- Wave management ---
-    if (waveActive) {
+    // --- Wave management (host/solo only; joiner follows snapshots) ---
+    if (net.role === "join") { /* waves driven by host */ }
+    else if (waveActive) {
       if (toSpawn > 0) {
         spawnTimer -= dt;
         if (spawnTimer <= 0 && enemies.filter(e=>!e.userData.dead).length < 14) {
@@ -1477,9 +1741,10 @@
       b.mesh.position.copy(b.pos);
       b.life -= dt;
       let gone = false;
-      // player hit (approx capsule around the player)
-      const dx = b.pos.x - player.x, dz = b.pos.z - player.z;
-      if (dx*dx + dz*dz < 0.5*0.5 && b.pos.y > 0.2 && b.pos.y < 1.95) { hurtPlayer(b.dmg); gone = true; }
+      // player hit (approx capsule around each player, foot-relative)
+      const pf = player.y - EYE;
+      if (dist2(b.pos.x, b.pos.z, player.x, player.z) < 0.25 && b.pos.y > pf + 0.2 && b.pos.y < pf + 1.95) { hurtPlayer(b.dmg); gone = true; }
+      if (!gone && net.role === "host" && dist2(b.pos.x, b.pos.z, net.join.x, net.join.z) < 0.25 && b.pos.y > net.join.y + 0.2 && b.pos.y < net.join.y + 1.95) { damageTarget("join", b.dmg); gone = true; }
       if (!gone) {
         if (b.pos.y <= 0.05) gone = true;                              // ground
         else if (dist2(b.pos.x, b.pos.z, player.x, player.z) > 60 * 60) gone = true; // far away
@@ -1499,6 +1764,14 @@
     updateThrowables(dt);
     updateFireZones(dt);
     updateBlasts(dt);
+
+    // --- Netcode sync ---
+    if (net.role === "join") {
+      if (performance.now() - net.lastIn > 45) { net.lastIn = performance.now(); netSend({ t: "in", x: player.x, y: player.y - EYE, z: player.z, ry: player.yaw }); }
+    } else if (net.role === "host") {
+      if (performance.now() - net.lastSnap > 60) { net.lastSnap = performance.now(); netSend(buildSnapshot()); }
+    }
+    updateCoopHud();
   }
 
   function animate() {
