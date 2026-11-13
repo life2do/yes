@@ -637,7 +637,7 @@
     const sinY = Math.sin(player.yaw), cosY = Math.cos(player.yaw);
     // forward is -z when yaw=0; account for yaw
     let nx = player.x + (strafe * cosY - fwd * sinY) * speed;
-    let nz = player.z + (strafe * sinY + fwd * cosY) * speed;
+    let nz = player.z - (strafe * sinY + fwd * cosY) * speed;
     [nx, nz] = resolveCollision(nx, nz, player.radius + 0.3);
     player.x = nx; player.z = nz;
 
