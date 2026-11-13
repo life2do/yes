@@ -214,7 +214,7 @@
 
   // Build timestamp — bumped on each commit so you can confirm the live
   // GitHub Page matches the latest push.
-  const BUILD = "2026-11-13 14:17 UTC";
+  const BUILD = "2026-11-13 14:27 UTC";
   const _stamp = document.getElementById("buildStamp");
   if (_stamp) _stamp.textContent = "BUILD " + BUILD;
 
@@ -429,7 +429,7 @@
       obs.push({ min: { x: x - s/2, z: z - s/2 }, max: { x: x + s/2, z: z + s/2 }, top: ROOF_H, mesh: m });
     }
 
-    // raised platform reached by a ramp (walk up, stand on top, walk underneath)
+    // raised platform (reachable with a double jump; stand on top or walk underneath)
     if (rng() < 0.45) {
       const pw = 5 + rng()*3, pd = 5 + rng()*3, ph = 2.3 + rng()*0.7, thick = 0.5;
       const px = bx + 7 + rng() * Math.max(1, CHUNK - 14);
@@ -442,15 +442,6 @@
         const leg = new THREE.Mesh(new THREE.BoxGeometry(0.3, ph, 0.3), concMat);
         leg.position.set(px + sx*(pw/2 - 0.4), ph/2, pz + sz*(pd/2 - 0.4)); group.add(leg);
       });
-      // ramp up to the platform's -x edge
-      const rampW = Math.min(pd, 3);
-      const x1 = px - pw/2, x0 = x1 - ph * 2; // ~0.5 slope
-      const len = Math.hypot(x1 - x0, ph);
-      const rm = new THREE.Mesh(new THREE.BoxGeometry(len, 0.3, rampW), crateMat);
-      rm.position.set((x0 + x1)/2, ph/2, pz);
-      rm.rotation.z = Math.atan2(ph, x1 - x0);
-      rm.castShadow = true; rm.receiveShadow = true; group.add(rm);
-      obs.push({ ramp: true, axis: "x", x0, x1, height: ph, min: { x: x0, z: pz - rampW/2 }, max: { x: x1, z: pz + rampW/2 }, mesh: rm });
     }
 
     scene.add(group);
