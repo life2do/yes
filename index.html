@@ -191,7 +191,7 @@
     <b>1–5 / Wheel</b><span>Switch weapon</span>
     <b>Shift</b><span>Sprint</span>
     <b>R</b><span>Reload</span>
-    <b>Space</b><span>Jump</span>
+    <b>Space ×2</b><span>Jump / double-jump</span>
     <b>Esc</b><span>Release mouse</span>
   </div>
   <button id="startBtn" disabled>Loading…</button>
@@ -214,7 +214,7 @@
 
   // Build timestamp — bumped on each commit so you can confirm the live
   // GitHub Page matches the latest push.
-  const BUILD = "2026-11-13 11:03 UTC";
+  const BUILD = "2026-11-13 11:08 UTC";
   const _stamp = document.getElementById("buildStamp");
   if (_stamp) _stamp.textContent = "BUILD " + BUILD;
 
@@ -522,6 +522,8 @@
     health: 100, lastHit: 0, onGround: true, radius: 0.5
   };
   const EYE = 1.7, CROUCH = 0;
+  const GRAV = 14, JUMP_V = 6.8;
+  let jumpPressed = false, jumpsLeft = 2;
 
   // ---------- Weapon state ----------
   const WEAPONS = {
@@ -611,7 +613,7 @@
   document.addEventListener("keydown", (e) => {
     keys[e.code] = true;
     if (e.code === "KeyR") reload();
-    if (e.code === "Space") e.preventDefault();
+    if (e.code === "Space") { e.preventDefault(); jumpPressed = true; }
     if (e.code.startsWith("Digit")) { const n = +e.code.slice(5); if (n >= 1 && n <= WEAPON_ORDER.length) switchWeapon(WEAPON_ORDER[n - 1]); }
   });
   document.addEventListener("keyup", (e) => { keys[e.code] = false; });
@@ -958,6 +960,13 @@
     src.connect(bp); bp.connect(g); g.connect(masterGain); src.start(t); src.stop(t + 0.65);
   }
 
+  function playJump() {
+    if (!actx) return; const t = actx.currentTime;
+    const o = actx.createOscillator(); o.type = "sine"; o.frequency.setValueAtTime(260, t); o.frequency.exponentialRampToValueAtTime(520, t + 0.12);
+    const g = actx.createGain(); g.gain.setValueAtTime(0.09, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+    o.connect(g); g.connect(masterGain); o.start(t); o.stop(t + 0.16);
+  }
+
   function playMelee() {
     if (!actx) return; const t = actx.currentTime;
     const o = actx.createOscillator(); o.type = "sine"; o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(52, t + 0.12);
@@ -1055,8 +1064,20 @@
   }
 
   // ---------- Collision helpers ----------
-  function resolveCollision(px, pz, radius) {
+  // Height of whatever surface is under (x,z): 0 = ground, or a standable
+  // obstacle top. Tall perimeter walls are excluded so you can't scale them.
+  function groundHeightAt(x, z, radius) {
+    let h = 0;
     for (const o of obstacles) {
+      const top = o.top || 6;
+      if (top > 3.6) continue;
+      if (x >= o.min.x - radius && x <= o.max.x + radius && z >= o.min.z - radius && z <= o.max.z + radius && top > h) h = top;
+    }
+    return h;
+  }
+  function resolveCollision(px, pz, radius, feetY = 0) {
+    for (const o of obstacles) {
+      if (feetY >= (o.top || 6) - 0.05) continue; // on top of / above it → no side collision
       const cx = Math.max(o.min.x, Math.min(px, o.max.x));
       const cz = Math.max(o.min.z, Math.min(pz, o.max.z));
       const dx = px - cx, dz = pz - cz;
@@ -1089,6 +1110,7 @@
     fireZones.forEach(z => scene.remove(z.group)); fireZones.length = 0;
     blasts.forEach(b => { scene.remove(b.mesh); scene.remove(b.light); }); blasts.length = 0;
     player.x = 0; player.z = 10; player.y = EYE; player.vy = 0; player.yaw = Math.PI; player.pitch = 0; player.health = 100;
+    player.onGround = true; jumpsLeft = 2; jumpPressed = false;
     kills = 0; wave = 0; toSpawn = 0; waveActive = false; betweenWaves = 2; shakeAmt = 0;
     resetWeapons(); setViewmodel("rifle");
     setAds(false); curFov = HIP_FOV; camera.fov = HIP_FOV; camera.updateProjectionMatrix();
@@ -1133,18 +1155,22 @@
     // forward is -z when yaw=0; account for yaw
     let nx = player.x + (strafe * cosY - fwd * sinY) * speed;
     let nz = player.z - (strafe * sinY + fwd * cosY) * speed;
-    [nx, nz] = resolveCollision(nx, nz, player.radius + 0.3);
+    const feetY = player.y - EYE;
+    [nx, nz] = resolveCollision(nx, nz, player.radius + 0.3, feetY);
     player.x = nx; player.z = nz;
 
     // view bob
     if (len > 0 && player.onGround) bob += dt * (sprint ? 14 : 10);
     const bobY = Math.sin(bob) * 0.035 * (len > 0 ? 1 : 0);
 
-    // --- Jump / gravity ---
-    if (keys["Space"] && player.onGround) { player.vy = 5.2; player.onGround = false; }
-    player.vy -= 14 * dt;
+    // --- Jump (double) + gravity over obstacle tops ---
+    if (jumpPressed && jumpsLeft > 0) { player.vy = JUMP_V; jumpsLeft--; player.onGround = false; playJump(); }
+    jumpPressed = false;
+    player.vy -= GRAV * dt;
     player.y += player.vy * dt;
-    if (player.y <= EYE) { player.y = EYE; player.vy = 0; player.onGround = true; }
+    const groundY = groundHeightAt(player.x, player.z, 0.35) + EYE;
+    if (player.y <= groundY) { player.y = groundY; player.vy = 0; player.onGround = true; jumpsLeft = 2; }
+    else player.onGround = false;
 
     // --- Camera ---
     const sh = shakeAmt;
