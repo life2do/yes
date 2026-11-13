@@ -162,7 +162,7 @@
 
   // Build timestamp — bumped on each commit so you can confirm the live
   // GitHub Page matches the latest push.
-  const BUILD = "2026-11-13 10:30 UTC";
+  const BUILD = "2026-11-13 10:34 UTC";
   const _stamp = document.getElementById("buildStamp");
   if (_stamp) _stamp.textContent = "BUILD " + BUILD;
 
@@ -309,7 +309,7 @@
   function addWall(x, z, w, d, h) {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
     m.position.set(x, h/2, z); m.castShadow = true; m.receiveShadow = true; scene.add(m);
-    obstacles.push({ min: { x: x - w/2, z: z - d/2 }, max: { x: x + w/2, z: z + d/2 } });
+    obstacles.push({ min: { x: x - w/2, z: z - d/2 }, max: { x: x + w/2, z: z + d/2 }, top: h });
   }
   // Perimeter walls
   const WH = 6;
@@ -324,7 +324,7 @@
   function addCrate(x, z, s, mat) {
     const m = new THREE.Mesh(new THREE.BoxGeometry(s, s, s), mat || crateMat);
     m.position.set(x, s/2, z); m.castShadow = true; m.receiveShadow = true; scene.add(m);
-    obstacles.push({ min: { x: x - s/2, z: z - s/2 }, max: { x: x + s/2, z: z + s/2 } });
+    obstacles.push({ min: { x: x - s/2, z: z - s/2 }, max: { x: x + s/2, z: z + s/2 }, top: s });
   }
   const coverLayout = [
     [-14,-10,3],[14,-12,3],[-20,8,2.4],[18,10,3],[0,0,2.6],[-8,18,2.2],[9,-20,2.6],
@@ -332,7 +332,7 @@
   ];
   coverLayout.forEach(([x,z,s], i) => addCrate(x, z, s, i % 3 === 0 ? concMat : crateMat));
   // low concrete barriers
-  function addBarrier(x,z,w,d){ const h=1.2; const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), concMat); m.position.set(x,h/2,z); m.castShadow=true; m.receiveShadow=true; scene.add(m); obstacles.push({min:{x:x-w/2,z:z-d/2},max:{x:x+w/2,z:z+d/2}}); }
+  function addBarrier(x,z,w,d){ const h=1.2; const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), concMat); m.position.set(x,h/2,z); m.castShadow=true; m.receiveShadow=true; scene.add(m); obstacles.push({min:{x:x-w/2,z:z-d/2},max:{x:x+w/2,z:z+d/2}, top: h}); }
   addBarrier(-6,-14,8,1); addBarrier(12,4,1,8); addBarrier(-18,2,1,7); addBarrier(4,14,7,1);
 
   // ---------- Viewmodel (gun) ----------
@@ -362,6 +362,11 @@
 
   // ---------- Enemies ----------
   const enemies = [];
+  const eBullets = [];
+  const eBulletGeo = new THREE.SphereGeometry(0.16, 8, 8);
+  const eBulletMat = new THREE.MeshBasicMaterial({ color: 0xff8a2a });
+  const eBulletGlow = new THREE.SphereGeometry(0.3, 8, 8);
+  const eBulletGlowMat = new THREE.MeshBasicMaterial({ color: 0xffb060, transparent: true, opacity: 0.35 });
   const enemyGeoBody = new THREE.BoxGeometry(0.7, 1.1, 0.4);
   const enemyGeoHead = new THREE.BoxGeometry(0.34, 0.34, 0.34);
   const enemyGeoLimb = new THREE.BoxGeometry(0.2, 0.7, 0.2);
@@ -546,6 +551,36 @@
     }
   }
 
+  function spawnEnemyBullet(from, d) {
+    // Inaccuracy: more spread at range, tightening slightly as waves escalate.
+    const spread = Math.max(0.02, 0.085 + d * 0.004 - wave * 0.002);
+    const target = new THREE.Vector3(player.x, player.y - 0.4, player.z);
+    const dir = target.clone().sub(from).normalize();
+    dir.x += (Math.random() - 0.5) * spread;
+    dir.y += (Math.random() - 0.5) * spread * 0.6;
+    dir.z += (Math.random() - 0.5) * spread;
+    dir.normalize();
+    const mesh = new THREE.Mesh(eBulletGeo, eBulletMat);
+    const glow = new THREE.Mesh(eBulletGlow, eBulletGlowMat);
+    mesh.add(glow);
+    mesh.position.copy(from);
+    scene.add(mesh);
+    eBullets.push({ mesh, pos: from.clone(), vel: dir.multiplyScalar(40), life: 2.4, dmg: (d < 5 ? 13 : 8) + wave * 0.5 });
+    playEnemyShot();
+  }
+
+  function playEnemyShot() {
+    if (!actx) return;
+    const t = actx.currentTime;
+    const src = actx.createBufferSource(); src.buffer = noiseBuffer;
+    const bp = actx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 900; bp.Q.value = 0.8;
+    const g = actx.createGain();
+    g.gain.setValueAtTime(0.18, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+    src.connect(bp); bp.connect(g); g.connect(masterGain);
+    src.start(t); src.stop(t + 0.1);
+  }
+
   function showHitmarker(isHead) {
     const hm = document.getElementById("hitmarker");
     hm.style.opacity = "1";
@@ -651,6 +686,7 @@
     hud.classList.remove("hidden");
     // reset
     enemies.forEach(e => scene.remove(e)); enemies.length = 0;
+    eBullets.forEach(b => scene.remove(b.mesh)); eBullets.length = 0;
     tracers.forEach(t => scene.remove(t.line)); tracers.length = 0;
     bloods.forEach(b => scene.remove(b.m)); bloods.length = 0;
     player.x = 0; player.z = 10; player.y = EYE; player.vy = 0; player.yaw = Math.PI; player.pitch = 0; player.health = 100;
@@ -791,10 +827,8 @@
         raycaster.set(from, toDir); raycaster.far = d;
         const obstHits = raycaster.intersectObjects(scene.children.filter(c => c.isMesh && c !== floor && !c.userData.enemyRef), false);
         if (obstHits.length === 0) {
-          // hit chance scales with distance; closer = more accurate
-          const chance = Math.max(0.25, 0.9 - d * 0.02);
-          if (Math.random() < chance) hurtPlayer((d < 4 ? 14 : 7) + wave * 0.4);
-          // muzzle flash on enemy rifle (brief emissive) — cheap: skip for perf
+          // Fire a visible projectile the player can see and dodge.
+          spawnEnemyBullet(from, d);
         }
       }
       alivePos.push(e);
@@ -833,6 +867,30 @@
       const b = bloods[i]; b.life -= dt; b.v.y -= 9 * dt;
       b.m.position.addScaledVector(b.v, dt); b.m.material.opacity = b.life;
       if (b.life <= 0) { scene.remove(b.m); bloods.splice(i, 1); }
+    }
+    // enemy projectiles
+    for (let i = eBullets.length - 1; i >= 0; i--) {
+      const b = eBullets[i];
+      b.pos.addScaledVector(b.vel, dt);
+      b.mesh.position.copy(b.pos);
+      b.life -= dt;
+      let gone = false;
+      // player hit (approx capsule around the player)
+      const dx = b.pos.x - player.x, dz = b.pos.z - player.z;
+      if (dx*dx + dz*dz < 0.5*0.5 && b.pos.y > 0.2 && b.pos.y < 1.95) { hurtPlayer(b.dmg); gone = true; }
+      if (!gone) {
+        if (b.pos.y <= 0.05) gone = true;                              // ground
+        else if (Math.abs(b.pos.x) > ARENA || Math.abs(b.pos.z) > ARENA) gone = true; // out of bounds
+        else {
+          for (const o of obstacles) {                                // cover / walls
+            if (b.pos.x >= o.min.x && b.pos.x <= o.max.x &&
+                b.pos.z >= o.min.z && b.pos.z <= o.max.z &&
+                b.pos.y <= (o.top || 6)) { gone = true; break; }
+          }
+        }
+      }
+      if (b.life <= 0) gone = true;
+      if (gone) { scene.remove(b.mesh); eBullets.splice(i, 1); }
     }
   }
 
