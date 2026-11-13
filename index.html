@@ -214,7 +214,7 @@
 
   // Build timestamp — bumped on each commit so you can confirm the live
   // GitHub Page matches the latest push.
-  const BUILD = "2026-11-13 14:02 UTC";
+  const BUILD = "2026-11-13 14:04 UTC";
   const _stamp = document.getElementById("buildStamp");
   if (_stamp) _stamp.textContent = "BUILD " + BUILD;
 
@@ -1291,7 +1291,7 @@
 
     // infinite ground + roof + shadows follow the player
     floor.position.set(player.x, 0, player.z);
-    floorTex.offset.set(player.x / TILE, player.z / TILE);
+    floorTex.offset.set(player.x / TILE, -player.z / TILE);
     roof.position.set(player.x, ROOF_H, player.z);
     roofTex.offset.set(player.x / TILE, player.z / TILE);
     ceilingRig.position.set(player.x, 0, player.z);
