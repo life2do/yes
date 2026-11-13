@@ -37,6 +37,30 @@
   #hitmarker .c { top: 50%; left: 0; height: 2px; width: 7px; transform: translateY(-50%); }
   #hitmarker .c.r { left: auto; right: 0; }
 
+  /* Scope / ADS overlay */
+  #scope { position: absolute; inset: 0; z-index: 8; pointer-events: none; opacity: 0; transition: opacity .12s; }
+  #scope.on { opacity: 1; }
+  #scope .vignette {
+    position: absolute; inset: 0;
+    background: radial-gradient(circle at 50% 50%,
+      rgba(0,0,0,0) 0,
+      rgba(0,0,0,0) 35vmin,
+      rgba(0,0,0,0.55) 35.4vmin,
+      rgba(0,0,0,0.99) 39vmin,
+      #000 40vmin);
+  }
+  #scope .ring {
+    position: absolute; left: 50%; top: 50%; width: 70vmin; height: 70vmin;
+    transform: translate(-50%,-50%); border-radius: 50%;
+    border: 2px solid rgba(15,22,15,0.95);
+    box-shadow: 0 0 0 3px rgba(120,160,120,0.12) inset, 0 0 40px rgba(0,0,0,0.6) inset;
+  }
+  #scope .rv, #scope .rh { position: absolute; left: 50%; top: 50%; background: rgba(8,12,8,0.9); transform: translate(-50%,-50%); }
+  #scope .rv { width: 1.5px; height: 70vmin; }
+  #scope .rh { height: 1.5px; width: 70vmin; }
+  #scope .dot { position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; border-radius: 50%; background: #ff3b3b; transform: translate(-50%,-50%); box-shadow: 0 0 5px #ff3b3b, 0 0 2px #fff; }
+  #crosshair.hide { opacity: 0; }
+
   #dmg { position: absolute; inset: 0; box-shadow: inset 0 0 160px 40px rgba(180,0,0,0); transition: box-shadow .12s; }
 
   .hud-bl { position: absolute; left: 26px; bottom: 22px; }
@@ -107,6 +131,7 @@
     <span class="h" style="top:50%;right:0;height:2px;width:9px;transform:translateY(-50%)"></span>
   </div>
   <div id="hitmarker"><span class="a"></span><span class="a b"></span><span class="c"></span><span class="c r"></span></div>
+  <div id="scope"><div class="vignette"></div><div class="ring"></div><div class="rv"></div><div class="rh"></div><div class="dot"></div></div>
 
   <div class="hud-bl">
     <div class="label">Health</div>
@@ -137,6 +162,7 @@
     <b>W A S D</b><span>Move</span>
     <b>Mouse</b><span>Look / aim</span>
     <b>Left click</b><span>Fire (hold for auto)</span>
+    <b>Right click</b><span>Aim down scope (hold)</span>
     <b>Shift</b><span>Sprint</span>
     <b>R</b><span>Reload</span>
     <b>Space</b><span>Jump</span>
@@ -162,7 +188,7 @@
 
   // Build timestamp — bumped on each commit so you can confirm the live
   // GitHub Page matches the latest push.
-  const BUILD = "2026-11-13 10:34 UTC";
+  const BUILD = "2026-11-13 10:41 UTC";
   const _stamp = document.getElementById("buildStamp");
   if (_stamp) _stamp.textContent = "BUILD " + BUILD;
 
@@ -429,6 +455,15 @@
   const keys = {};
   let pointerLocked = false;
   let firing = false;
+  let ads = false, curFov = 78, sensScale = 1;
+  const HIP_FOV = 78, ADS_FOV = 40;
+
+  function setAds(v) {
+    ads = v;
+    document.getElementById("scope").classList.toggle("on", v);
+    document.getElementById("crosshair").classList.toggle("hide", v);
+    gun.visible = !v;
+  }
 
   document.addEventListener("keydown", (e) => {
     keys[e.code] = true;
@@ -437,12 +472,19 @@
   });
   document.addEventListener("keyup", (e) => { keys[e.code] = false; });
 
-  renderer.domElement.addEventListener("mousedown", (e) => { if (e.button === 0) firing = true; });
-  document.addEventListener("mouseup", (e) => { if (e.button === 0) firing = false; });
+  renderer.domElement.addEventListener("mousedown", (e) => {
+    if (e.button === 0) firing = true;
+    else if (e.button === 2 && pointerLocked && state === S.PLAY) setAds(true);
+  });
+  document.addEventListener("mouseup", (e) => {
+    if (e.button === 0) firing = false;
+    else if (e.button === 2) setAds(false);
+  });
+  renderer.domElement.addEventListener("contextmenu", (e) => e.preventDefault());
 
   document.addEventListener("mousemove", (e) => {
     if (!pointerLocked) return;
-    const sens = 0.0022;
+    const sens = 0.0022 * sensScale;
     player.yaw -= e.movementX * sens;
     player.pitch -= e.movementY * sens;
     player.pitch = Math.max(-1.3, Math.min(1.3, player.pitch));
@@ -451,6 +493,7 @@
   function requestLock() { renderer.domElement.requestPointerLock(); }
   document.addEventListener("pointerlockchange", () => {
     pointerLocked = document.pointerLockElement === renderer.domElement;
+    if (!pointerLocked) { firing = false; setAds(false); }
     if (!pointerLocked && state === S.PLAY) {
       // paused look; show subtle hint by dimming crosshair — keep simple: do nothing destructive
     }
@@ -472,14 +515,15 @@
     playShot();
 
     // recoil & flash
-    WEAPON.recoil = Math.min(WEAPON.recoil + 0.04, 0.16);
-    player.pitch += 0.012 + Math.random()*0.01;
+    WEAPON.recoil = Math.min(WEAPON.recoil + (ads ? 0.025 : 0.04), 0.16);
+    player.pitch += (0.012 + Math.random()*0.01) * (ads ? 0.55 : 1);
     flash.material.opacity = 1; flashLight.intensity = 3;
     gun.position.z += 0.06; // kickback (eased back in update)
 
     // spread
-    const sx = (Math.random()-0.5) * (WEAPON.spread + WEAPON.recoil*0.06);
-    const sy = (Math.random()-0.5) * (WEAPON.spread + WEAPON.recoil*0.06);
+    const aimTighten = ads ? 0.3 : 1; // scope = much better accuracy
+    const sx = (Math.random()-0.5) * (WEAPON.spread + WEAPON.recoil*0.06) * aimTighten;
+    const sy = (Math.random()-0.5) * (WEAPON.spread + WEAPON.recoil*0.06) * aimTighten;
     const dir = new THREE.Vector3();
     camera.getWorldDirection(dir);
     dir.x += sx; dir.y += sy; dir.normalize();
@@ -692,6 +736,7 @@
     player.x = 0; player.z = 10; player.y = EYE; player.vy = 0; player.yaw = Math.PI; player.pitch = 0; player.health = 100;
     kills = 0; wave = 0; toSpawn = 0; waveActive = false; betweenWaves = 2;
     WEAPON.mag = 30; WEAPON.reserve = 120; WEAPON.reloading = false; WEAPON.recoil = 0;
+    setAds(false); curFov = HIP_FOV; camera.fov = HIP_FOV; camera.updateProjectionMatrix();
     document.getElementById("kills").textContent = "0";
     document.getElementById("reloadMsg").textContent = "";
     updateAmmo(); updateHealth();
@@ -758,6 +803,12 @@
     camera.rotation.order = "YXZ";
     camera.rotation.y = player.yaw;
     camera.rotation.x = player.pitch;
+
+    // --- Scope zoom ---
+    const targetFov = ads ? ADS_FOV : HIP_FOV;
+    curFov += (targetFov - curFov) * Math.min(1, dt * 14);
+    if (Math.abs(camera.fov - curFov) > 0.02) { camera.fov = curFov; camera.updateProjectionMatrix(); }
+    sensScale = curFov / HIP_FOV; // slower, steadier aim while zoomed
 
     // --- Firing ---
     if (firing && pointerLocked) shoot();
