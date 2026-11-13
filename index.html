@@ -214,7 +214,7 @@
 
   // Build timestamp — bumped on each commit so you can confirm the live
   // GitHub Page matches the latest push.
-  const BUILD = "2026-11-13 14:08 UTC";
+  const BUILD = "2026-11-13 14:12 UTC";
   const _stamp = document.getElementById("buildStamp");
   if (_stamp) _stamp.textContent = "BUILD " + BUILD;
 
@@ -561,20 +561,51 @@
   const enemyGeoBody = new THREE.BoxGeometry(0.7, 1.1, 0.4);
   const enemyGeoHead = new THREE.BoxGeometry(0.34, 0.34, 0.34);
   const enemyGeoLimb = new THREE.BoxGeometry(0.2, 0.7, 0.2);
+  // robber look: dark balaclava/clothing, skin eye-slit, dark eyes, blade
+  const enemyDarkMat = new THREE.MeshStandardMaterial({ color: 0x1b1c20, roughness: 0.95 });
+  const enemySkinMat = new THREE.MeshStandardMaterial({ color: 0xc89b74, roughness: 1 });
+  const enemyEyeMat = new THREE.MeshBasicMaterial({ color: 0x0a0a0a });
+  const bladeMat = new THREE.MeshStandardMaterial({ color: 0xd7dde3, metalness: 0.85, roughness: 0.3 });
 
   function makeEnemy(hpMul, speedMul, tint, kind) {
     const g = new THREE.Group();
-    const bodyMat = new THREE.MeshStandardMaterial({ color: tint, roughness: 0.9 });
-    const headMat = new THREE.MeshStandardMaterial({ color: 0x9a7b55, roughness: 1 });
-    const torso = new THREE.Mesh(enemyGeoBody, bodyMat); torso.position.y = 1.15; torso.castShadow = true; g.add(torso);
-    const head = new THREE.Mesh(enemyGeoHead, headMat); head.position.y = 1.9; head.castShadow = true; g.add(head);
-    const legL = new THREE.Mesh(enemyGeoLimb, bodyMat); legL.position.set(-0.17, 0.4, 0); g.add(legL);
-    const legR = new THREE.Mesh(enemyGeoLimb, bodyMat); legR.position.set(0.17, 0.4, 0); g.add(legR);
-    const armL = new THREE.Mesh(enemyGeoLimb, bodyMat); armL.position.set(-0.46, 1.2, 0); armL.scale.y = 0.85; g.add(armL);
-    const armR = new THREE.Mesh(enemyGeoLimb, bodyMat); armR.position.set(0.46, 1.2, 0); armR.scale.y = 0.85; g.add(armR);
     const isRush = kind === "rusher";
-    // rifle — soldiers carry one; rushers charge with bare hands
-    const rifle = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.5), metal); rifle.position.set(0.4, 1.2, -0.25); rifle.visible = !isRush; g.add(rifle);
+    const bodyMat = new THREE.MeshStandardMaterial({ color: tint, roughness: 0.9 });
+
+    // torso (colored jacket identifies the type)
+    const torso = new THREE.Mesh(enemyGeoBody, bodyMat); torso.position.y = 1.15; torso.castShadow = true; g.add(torso);
+    // head: dark balaclava with a skin eye-slit and two eyes (a face)
+    const head = new THREE.Mesh(enemyGeoHead, enemyDarkMat); head.position.y = 1.9; head.castShadow = true; g.add(head);
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.345, 0.1, 0.02), enemySkinMat); band.position.set(0, 1.93, 0.17); g.add(band);
+    const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.02), enemyEyeMat); eyeL.position.set(-0.08, 1.93, 0.185); g.add(eyeL);
+    const eyeR = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.02), enemyEyeMat); eyeR.position.set(0.08, 1.93, 0.185); g.add(eyeR);
+    // dark trousers + sleeves with skin hands
+    const legL = new THREE.Mesh(enemyGeoLimb, enemyDarkMat); legL.position.set(-0.17, 0.4, 0); g.add(legL);
+    const legR = new THREE.Mesh(enemyGeoLimb, enemyDarkMat); legR.position.set(0.17, 0.4, 0); g.add(legR);
+    const armL = new THREE.Mesh(enemyGeoLimb, enemyDarkMat); armL.position.set(-0.46, 1.2, 0); armL.scale.y = 0.85; g.add(armL);
+    const armR = new THREE.Mesh(enemyGeoLimb, enemyDarkMat); armR.position.set(0.46, 1.2, 0); armR.scale.y = 0.85; g.add(armR);
+    const handL = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.17, 0.17), enemySkinMat); handL.position.set(0, -0.44, 0); armL.add(handL);
+    const handR = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.17, 0.17), enemySkinMat); handR.position.set(0, -0.44, 0); armR.add(handR);
+
+    if (isRush) {
+      // machete, held in the right hand so it swings with the lunge
+      const blade = new THREE.Group();
+      blade.add(new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.18, 0.06), enemyDarkMat));               // handle
+      const steel = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.5, 0.13), bladeMat); steel.position.y = 0.33; blade.add(steel);
+      blade.position.set(0, -0.5, 0.12); blade.rotation.x = -1.3; // point forward
+      armR.add(blade);
+    } else {
+      // rifle held across the chest, pointing forward (enemy faces the player)
+      const rg = new THREE.Group();
+      rg.add(new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 0.5), metal));
+      const brl = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.42, 8), metal); brl.rotation.x = Math.PI/2; brl.position.z = -0.42; rg.add(brl);
+      const mg = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.18, 0.08), metal); mg.position.set(0, -0.13, 0.05); rg.add(mg);
+      rg.position.set(0.18, 1.28, -0.34); g.add(rg);
+    }
+
+    // everything on the head counts as a headshot
+    [head, band, eyeL, eyeR].forEach(m => { m.userData.headHit = true; });
+
     g.userData = {
       kind: kind || "soldier",
       hp: 3 * hpMul, maxHp: 3 * hpMul,
@@ -799,7 +830,7 @@
     let endDist = Math.min(worldDist, 200);
     if (hits.length && hits[0].distance <= worldDist + 0.05) {
       const e = hits[0].object.userData.enemyRef;
-      const isHead = hits[0].object === e.userData.head;
+      const isHead = hits[0].object.userData.headHit === true;
       const dmg = WEAPON.damage * (isHead ? WEAPON.headMul : 1);
       damageEnemy(e, dmg, hits[0].point, isHead);
       endDist = hits[0].distance;
