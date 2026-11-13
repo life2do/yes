@@ -196,7 +196,7 @@
 
   // Build timestamp — bumped on each commit so you can confirm the live
   // GitHub Page matches the latest push.
-  const BUILD = "2026-11-13 10:53 UTC";
+  const BUILD = "2026-11-13 10:57 UTC";
   const _stamp = document.getElementById("buildStamp");
   if (_stamp) _stamp.textContent = "BUILD " + BUILD;
 
@@ -448,7 +448,7 @@
   const enemyGeoHead = new THREE.BoxGeometry(0.34, 0.34, 0.34);
   const enemyGeoLimb = new THREE.BoxGeometry(0.2, 0.7, 0.2);
 
-  function makeEnemy(hpMul, speedMul, tint) {
+  function makeEnemy(hpMul, speedMul, tint, kind) {
     const g = new THREE.Group();
     const bodyMat = new THREE.MeshStandardMaterial({ color: tint, roughness: 0.9 });
     const headMat = new THREE.MeshStandardMaterial({ color: 0x9a7b55, roughness: 1 });
@@ -458,9 +458,17 @@
     const legR = new THREE.Mesh(enemyGeoLimb, bodyMat); legR.position.set(0.17, 0.4, 0); g.add(legR);
     const armL = new THREE.Mesh(enemyGeoLimb, bodyMat); armL.position.set(-0.46, 1.2, 0); armL.scale.y = 0.85; g.add(armL);
     const armR = new THREE.Mesh(enemyGeoLimb, bodyMat); armR.position.set(0.46, 1.2, 0); armR.scale.y = 0.85; g.add(armR);
-    // a little rifle
-    const rifle = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.5), metal); rifle.position.set(0.4, 1.2, -0.25); g.add(rifle);
-    g.userData = { hp: 3 * hpMul, maxHp: 3 * hpMul, speed: (1.6 + Math.random()*0.8) * speedMul, head, torso, legL, legR, fireCd: 1.2 + Math.random(), walk: Math.random()*Math.PI*2, hitT: 0, dead: false };
+    const isRush = kind === "rusher";
+    // rifle — soldiers carry one; rushers charge with bare hands
+    const rifle = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.5), metal); rifle.position.set(0.4, 1.2, -0.25); rifle.visible = !isRush; g.add(rifle);
+    g.userData = {
+      kind: kind || "soldier",
+      hp: 3 * hpMul, maxHp: 3 * hpMul,
+      speed: (1.6 + Math.random()*0.8) * speedMul,
+      head, torso, legL, legR, armL, armR,
+      fireCd: 1.2 + Math.random(), meleeCd: 0, lunge: 0,
+      walk: Math.random()*Math.PI*2, hitT: 0, dead: false
+    };
     g.traverse(o => { if (o.isMesh) o.userData.enemyRef = g; });
     return g;
   }
@@ -469,11 +477,16 @@
     const t = wave;
     const hpMul = 1 + t * 0.18;
     const speedMul = Math.min(1 + t * 0.05, 1.8);
-    let tint = 0x7a4a3a; // basic fatigues
+    let tint = 0x7a4a3a, kind = "soldier"; // basic fatigues
     const r = Math.random();
-    if (r < Math.min(0.08 + t*0.02, 0.3)) tint = 0x8b2f2f; // heavy (reddish)
-    else if (r < 0.5) tint = 0x4a5239; // green camo
-    const e = makeEnemy(tint === 0x8b2f2f ? hpMul * 2.2 : hpMul, tint === 0x8b2f2f ? speedMul*0.8 : speedMul, tint);
+    const rushChance = Math.min(0.12 + t * 0.03, 0.45); // rushers grow more common
+    if (r < rushChance) { kind = "rusher"; tint = 0xcf4a2a; }                       // orange-red melee charger
+    else if (r < rushChance + Math.min(0.08 + t*0.02, 0.3)) { kind = "heavy"; tint = 0x8b2f2f; } // tanky ranged
+    else if (r < 0.6) tint = 0x4a5239; // green camo (ranged)
+    let hp = hpMul, spd = speedMul;
+    if (kind === "heavy") { hp *= 2.2; spd *= 0.8; }
+    else if (kind === "rusher") { hp *= 0.8; spd *= 1.9; } // fast but fragile
+    const e = makeEnemy(hp, spd, tint, kind);
     // spawn at edge, away from player
     let ang, x, z, tries = 0;
     do {
@@ -927,6 +940,17 @@
     src.connect(bp); bp.connect(g); g.connect(masterGain); src.start(t); src.stop(t + 0.65);
   }
 
+  function playMelee() {
+    if (!actx) return; const t = actx.currentTime;
+    const o = actx.createOscillator(); o.type = "sine"; o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(52, t + 0.12);
+    const g = actx.createGain(); g.gain.setValueAtTime(0.32, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+    o.connect(g); g.connect(masterGain); o.start(t); o.stop(t + 0.18);
+    const src = actx.createBufferSource(); src.buffer = noiseBuffer;
+    const bp = actx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 500;
+    const ng = actx.createGain(); ng.gain.setValueAtTime(0.2, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    src.connect(bp); bp.connect(ng); ng.connect(masterGain); src.start(t); src.stop(t + 0.12);
+  }
+
   function showHitmarker(isHead) {
     const hm = document.getElementById("hitmarker");
     hm.style.opacity = "1";
@@ -1164,8 +1188,9 @@
       // move toward player
       const dx = player.x - e.position.x, dz = player.z - e.position.z;
       const d = Math.hypot(dx, dz) || 0.0001;
-      e.userData.walk += dt * 8;
-      const stopDist = 2.0;
+      const isRush = u.kind === "rusher";
+      e.userData.walk += dt * (isRush ? 15 : 8);
+      const stopDist = isRush ? 1.5 : 2.0;
       if (d > stopDist) {
         let ex = e.position.x + (dx/d) * u.speed * dt;
         let ez = e.position.z + (dz/d) * u.speed * dt;
@@ -1178,27 +1203,40 @@
           if (od < 1.1 && od > 0.001) { ex += (odx/od)*0.03; ez += (odz/od)*0.03; }
         }
         e.position.x = ex; e.position.z = ez;
-        // leg walk animation
-        u.legL.rotation.x = Math.sin(u.walk) * 0.6;
-        u.legR.rotation.x = -Math.sin(u.walk) * 0.6;
+        // leg run animation (rushers pump harder)
+        const amp = isRush ? 0.95 : 0.6;
+        u.legL.rotation.x = Math.sin(u.walk) * amp;
+        u.legR.rotation.x = -Math.sin(u.walk) * amp;
       } else {
         u.legL.rotation.x = 0; u.legR.rotation.x = 0;
       }
       // face player
       e.rotation.y = Math.atan2(dx, dz);
 
-      // attack (hitscan-ish): when close & cooldown ready & line of sight, deal damage
-      u.fireCd -= dt;
-      if (u.fireCd <= 0 && d < 26) {
-        u.fireCd = 1.1 + Math.random() * 1.2;
-        // simple LOS: raycast from enemy chest to player, see if obstacle closer
-        const from = new THREE.Vector3(e.position.x, 1.3, e.position.z);
-        const toDir = new THREE.Vector3(player.x - e.position.x, player.y - 1.3, player.z - e.position.z).normalize();
-        raycaster.set(from, toDir); raycaster.far = d;
-        const obstHits = raycaster.intersectObjects(scene.children.filter(c => c.isMesh && c !== floor && !c.userData.enemyRef), false);
-        if (obstHits.length === 0) {
-          // Fire a visible projectile the player can see and dodge.
-          spawnEnemyBullet(from, d);
+      if (isRush) {
+        // arms reach out while charging; swipe forward on each strike
+        u.lunge = Math.max(0, u.lunge - dt * 3);
+        const reach = -1.1 - u.lunge * 0.9;
+        u.armL.rotation.x = reach; u.armR.rotation.x = reach;
+        u.meleeCd -= dt;
+        if (d < 2.4 && u.meleeCd <= 0) {
+          u.meleeCd = 0.9;
+          u.lunge = 1;
+          hurtPlayer(16 + wave * 0.6);
+          shakeAmt = Math.min(0.3, shakeAmt + 0.16);
+          playMelee();
+        }
+      } else {
+        u.armL.rotation.x = 0; u.armR.rotation.x = 0;
+        // ranged attack: fire a visible, dodgeable projectile on line of sight
+        u.fireCd -= dt;
+        if (u.fireCd <= 0 && d < 26) {
+          u.fireCd = 1.1 + Math.random() * 1.2;
+          const from = new THREE.Vector3(e.position.x, 1.3, e.position.z);
+          const toDir = new THREE.Vector3(player.x - e.position.x, player.y - 1.3, player.z - e.position.z).normalize();
+          raycaster.set(from, toDir); raycaster.far = d;
+          const obstHits = raycaster.intersectObjects(scene.children.filter(c => c.isMesh && c !== floor && !c.userData.enemyRef), false);
+          if (obstHits.length === 0) spawnEnemyBullet(from, d);
         }
       }
       alivePos.push(e);
