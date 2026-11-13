@@ -37,28 +37,41 @@
   #hitmarker .c { top: 50%; left: 0; height: 2px; width: 7px; transform: translateY(-50%); }
   #hitmarker .c.r { left: auto; right: 0; }
 
-  /* Scope / ADS overlay */
-  #scope { position: absolute; inset: 0; z-index: 8; pointer-events: none; opacity: 0; transition: opacity .12s; }
+  /* Scope / ADS overlays — a different optic per weapon */
+  #scope { position: absolute; inset: 0; z-index: 8; pointer-events: none; opacity: 0; transition: opacity .1s; }
   #scope.on { opacity: 1; }
-  #scope .vignette {
-    position: absolute; inset: 0;
-    background: radial-gradient(circle at 50% 50%,
-      rgba(0,0,0,0) 0,
-      rgba(0,0,0,0) 35vmin,
-      rgba(0,0,0,0.55) 35.4vmin,
-      rgba(0,0,0,0.99) 39vmin,
-      #000 40vmin);
-  }
-  #scope .ring {
-    position: absolute; left: 50%; top: 50%; width: 70vmin; height: 70vmin;
-    transform: translate(-50%,-50%); border-radius: 50%;
-    border: 2px solid rgba(15,22,15,0.95);
-    box-shadow: 0 0 0 3px rgba(120,160,120,0.12) inset, 0 0 40px rgba(0,0,0,0.6) inset;
-  }
-  #scope .rv, #scope .rh { position: absolute; left: 50%; top: 50%; background: rgba(8,12,8,0.9); transform: translate(-50%,-50%); }
-  #scope .rv { width: 1.5px; height: 70vmin; }
-  #scope .rh { height: 1.5px; width: 70vmin; }
-  #scope .dot { position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; border-radius: 50%; background: #ff3b3b; transform: translate(-50%,-50%); box-shadow: 0 0 5px #ff3b3b, 0 0 2px #fff; }
+  #scope .vignette { position: absolute; inset: 0; }
+  #scope .reticle { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); display: none; }
+  #scope.scope-acog   #ret-acog   { display: block; }
+  #scope.scope-reddot #ret-reddot { display: block; }
+  #scope.scope-holo   #ret-holo   { display: block; }
+
+  /* vignette (lens blackout) per optic */
+  #scope.scope-acog .vignette   { background: radial-gradient(circle at 50% 50%, rgba(0,0,0,0) 0, rgba(0,0,0,0) 32vmin, rgba(0,0,0,0.6) 32.4vmin, rgba(0,0,0,0.98) 36vmin, #000 37vmin); }
+  #scope.scope-reddot .vignette { background: radial-gradient(circle at 50% 50%, rgba(0,0,0,0) 0, rgba(0,0,0,0) 44vmin, rgba(0,0,0,0.18) 45vmin, rgba(0,0,0,0.5) 53vmin); }
+  #scope.scope-holo .vignette   { background: radial-gradient(circle at 50% 50%, rgba(6,20,26,0) 0, rgba(6,20,26,0) 37vmin, rgba(0,12,18,0.5) 37.6vmin, rgba(0,6,10,0.96) 42vmin, #000 43vmin); }
+
+  /* ACOG — amber chevron, green ring + crosshair */
+  #ret-acog .ring { position:absolute; left:50%; top:50%; width:64vmin; height:64vmin; transform:translate(-50%,-50%); border-radius:50%; border:2px solid rgba(120,170,110,0.22); box-shadow:0 0 36px rgba(0,0,0,0.6) inset; }
+  #ret-acog .ln { position:absolute; left:50%; top:50%; background:rgba(30,60,30,0.85); transform:translate(-50%,-50%); }
+  #ret-acog .ln.v { width:1.5px; height:64vmin; }
+  #ret-acog .ln.h { height:1.5px; width:64vmin; }
+  #ret-acog .chev { position:absolute; left:50%; top:50%; transform:translate(-50%,-6%); width:0; height:0; border-left:9px solid transparent; border-right:9px solid transparent; border-bottom:14px solid #ffcf4d; filter:drop-shadow(0 0 3px #ffcf4d); }
+  #ret-acog .dot { position:absolute; left:50%; top:50%; width:4px; height:4px; border-radius:50%; background:#ffcf4d; transform:translate(-50%,-50%); box-shadow:0 0 5px #ffcf4d; }
+
+  /* Red dot — pistol open sight */
+  #ret-reddot .ring { position:absolute; left:50%; top:50%; width:12vmin; height:12vmin; transform:translate(-50%,-50%); border-radius:50%; border:1.5px solid rgba(255,70,70,0.35); }
+  #ret-reddot .dot { position:absolute; left:50%; top:50%; width:7px; height:7px; border-radius:50%; background:#ff2b2b; transform:translate(-50%,-50%); box-shadow:0 0 8px #ff2b2b, 0 0 3px #fff; }
+
+  /* Holographic — LMG cyan ring + segmented crosshair */
+  #ret-holo .ring { position:absolute; left:50%; top:50%; width:28vmin; height:28vmin; transform:translate(-50%,-50%); border-radius:50%; border:2px solid rgba(80,200,255,0.5); box-shadow:0 0 16px rgba(80,200,255,0.25), 0 0 16px rgba(80,200,255,0.2) inset; }
+  #ret-holo .seg { position:absolute; left:50%; top:50%; background:#5ec8ff; box-shadow:0 0 5px #5ec8ff; }
+  #ret-holo .seg.t { width:2px; height:5vmin; transform:translate(-50%, calc(-50% - 7vmin)); }
+  #ret-holo .seg.b { width:2px; height:5vmin; transform:translate(-50%, calc(-50% + 7vmin)); }
+  #ret-holo .seg.l { height:2px; width:5vmin; transform:translate(calc(-50% - 7vmin), -50%); }
+  #ret-holo .seg.r { height:2px; width:5vmin; transform:translate(calc(-50% + 7vmin), -50%); }
+  #ret-holo .dot { position:absolute; left:50%; top:50%; width:5px; height:5px; border-radius:50%; background:#aef0ff; transform:translate(-50%,-50%); box-shadow:0 0 6px #5ec8ff; }
+
   #crosshair.hide { opacity: 0; }
 
   #dmg { position: absolute; inset: 0; box-shadow: inset 0 0 160px 40px rgba(180,0,0,0); transition: box-shadow .12s; }
@@ -137,7 +150,12 @@
     <span class="h" style="top:50%;right:0;height:2px;width:9px;transform:translateY(-50%)"></span>
   </div>
   <div id="hitmarker"><span class="a"></span><span class="a b"></span><span class="c"></span><span class="c r"></span></div>
-  <div id="scope"><div class="vignette"></div><div class="ring"></div><div class="rv"></div><div class="rh"></div><div class="dot"></div></div>
+  <div id="scope">
+    <div class="vignette"></div>
+    <div class="reticle" id="ret-acog"><div class="ring"></div><div class="ln v"></div><div class="ln h"></div><div class="chev"></div><div class="dot"></div></div>
+    <div class="reticle" id="ret-reddot"><div class="ring"></div><div class="dot"></div></div>
+    <div class="reticle" id="ret-holo"><div class="ring"></div><div class="seg t"></div><div class="seg b"></div><div class="seg l"></div><div class="seg r"></div><div class="dot"></div></div>
+  </div>
 
   <div class="hud-bl">
     <div class="label">Health</div>
@@ -196,7 +214,7 @@
 
   // Build timestamp — bumped on each commit so you can confirm the live
   // GitHub Page matches the latest push.
-  const BUILD = "2026-11-13 10:57 UTC";
+  const BUILD = "2026-11-13 11:03 UTC";
   const _stamp = document.getElementById("buildStamp");
   if (_stamp) _stamp.textContent = "BUILD " + BUILD;
 
@@ -507,9 +525,9 @@
 
   // ---------- Weapon state ----------
   const WEAPONS = {
-    rifle:   { name: "7.62 Rifle",   kind: "gun",   auto: true,  fireRate: 95,  magSize: 30,  mag: 30,  reserve: 120, reloadTime: 1700, lastShot: 0, reloading: false, recoil: 0, spread: 0.008, damage: 22, headMul: 2.6, canAds: true },
-    pistol:  { name: "Sidearm .45",  kind: "gun",   auto: false, fireRate: 135, magSize: 12,  mag: 12,  reserve: 72,  reloadTime: 1100, lastShot: 0, reloading: false, recoil: 0, spread: 0.003, damage: 34, headMul: 3.2, canAds: true },
-    lmg:     { name: "M249 LMG",     kind: "gun",   auto: true,  fireRate: 65,  magSize: 100, mag: 100, reserve: 200, reloadTime: 3200, lastShot: 0, reloading: false, recoil: 0, spread: 0.028, damage: 17, headMul: 1.8, canAds: true },
+    rifle:   { name: "7.62 Rifle",   kind: "gun",   auto: true,  fireRate: 95,  magSize: 30,  mag: 30,  reserve: 120, reloadTime: 1700, lastShot: 0, reloading: false, recoil: 0, spread: 0.008, damage: 22, headMul: 2.6, canAds: true, adsFov: 42, scope: "acog" },
+    pistol:  { name: "Sidearm .45",  kind: "gun",   auto: false, fireRate: 135, magSize: 12,  mag: 12,  reserve: 72,  reloadTime: 1100, lastShot: 0, reloading: false, recoil: 0, spread: 0.003, damage: 34, headMul: 3.2, canAds: true, adsFov: 56, scope: "reddot" },
+    lmg:     { name: "M249 LMG",     kind: "gun",   auto: true,  fireRate: 65,  magSize: 100, mag: 100, reserve: 200, reloadTime: 3200, lastShot: 0, reloading: false, recoil: 0, spread: 0.028, damage: 17, headMul: 1.8, canAds: true, adsFov: 50, scope: "holo" },
     grenade: { name: "Frag Grenade", kind: "throw", throwType: "frag", count: 4, max: 8, cooldown: 650, lastThrow: 0, recoil: 0 },
     molotov: { name: "Molotov",      kind: "throw", throwType: "fire", count: 3, max: 6, cooldown: 750, lastThrow: 0, recoil: 0 },
   };
@@ -544,8 +562,8 @@
   function switchWeapon(name) {
     if (!WEAPONS[name] || name === curWeapon) return;
     curWeapon = name; WEAPON = WEAPONS[name];
-    if (!WEAPON.canAds && ads) setAds(false);
     setViewmodel(name);
+    if (ads) setAds(WEAPON.canAds); // drop scope on throwables, re-style it on guns
     document.getElementById("reloadMsg").textContent = WEAPON.reloading ? "RELOADING…" : "";
     updateAmmo(); updateWeaponHud(); playSwitch();
   }
@@ -585,7 +603,7 @@
 
   function setAds(v) {
     ads = v;
-    document.getElementById("scope").classList.toggle("on", v);
+    document.getElementById("scope").className = v ? "on scope-" + (WEAPON.scope || "acog") : "";
     document.getElementById("crosshair").classList.toggle("hide", v);
     gun.visible = !v;
   }
@@ -1148,7 +1166,7 @@
     camera.rotation.x = player.pitch;
 
     // --- Scope zoom ---
-    const targetFov = ads ? ADS_FOV : HIP_FOV;
+    const targetFov = ads ? (WEAPON.adsFov || ADS_FOV) : HIP_FOV;
     curFov += (targetFov - curFov) * Math.min(1, dt * 14);
     if (Math.abs(camera.fov - curFov) > 0.02) { camera.fov = curFov; camera.updateProjectionMatrix(); }
     sensScale = curFov / HIP_FOV; // slower, steadier aim while zoomed
