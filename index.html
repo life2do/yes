@@ -214,7 +214,7 @@
 
   // Build timestamp — bumped on each commit so you can confirm the live
   // GitHub Page matches the latest push.
-  const BUILD = "2026-11-13 13:54 UTC";
+  const BUILD = "2026-11-13 14:02 UTC";
   const _stamp = document.getElementById("buildStamp");
   if (_stamp) _stamp.textContent = "BUILD " + BUILD;
 
@@ -360,6 +360,29 @@
   );
   floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor);
 
+  // Warehouse roof + ceiling light strips (follow the player like the floor)
+  const ROOF_H = 9;
+  const roofTex = makeTexture((c, s) => {
+    c.fillStyle = "#1b201b"; c.fillRect(0, 0, s, s);
+    c.strokeStyle = "rgba(0,0,0,0.55)"; c.lineWidth = 6;
+    for (let i = 0; i <= s; i += s/4) { c.beginPath(); c.moveTo(i,0); c.lineTo(i,s); c.moveTo(0,i); c.lineTo(s,i); c.stroke(); }
+    c.fillStyle = "rgba(120,130,120,0.15)";
+    for (let i = 0; i < 300; i++) c.fillRect(Math.random()*s, Math.random()*s, 2, 2);
+  }, 128);
+  roofTex.repeat.set(FLOOR_SIZE / TILE, FLOOR_SIZE / TILE);
+  const roof = new THREE.Mesh(
+    new THREE.PlaneGeometry(FLOOR_SIZE, FLOOR_SIZE),
+    new THREE.MeshStandardMaterial({ map: roofTex, roughness: 1, metalness: 0.2, side: THREE.DoubleSide })
+  );
+  roof.rotation.x = Math.PI/2; roof.position.y = ROOF_H; scene.add(roof);
+
+  const ceilingRig = new THREE.Group(); scene.add(ceilingRig);
+  for (let i = -2; i <= 2; i++) {
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.16, FLOOR_SIZE), new THREE.MeshBasicMaterial({ color: 0xfff2cc }));
+    strip.position.set(i * 14, ROOF_H - 0.2, 0); ceilingRig.add(strip);
+  }
+  const ceilLight = new THREE.PointLight(0xfff0d0, 0.5, 70); ceilLight.position.set(0, ROOF_H - 1, 0); ceilingRig.add(ceilLight);
+
   const crateMat = new THREE.MeshStandardMaterial({ map: crateTex, roughness: 0.95 });
   const concMat  = new THREE.MeshStandardMaterial({ color: 0x545a4c, roughness: 1 });
 
@@ -375,7 +398,9 @@
     const group = new THREE.Group();
     const obs = [];
     const bx = cx * CHUNK, bz = cz * CHUNK;
-    const count = 2 + Math.floor(rng() * 4);
+
+    // scattered crates
+    const count = 2 + Math.floor(rng() * 3);
     for (let i = 0; i < count; i++) {
       const s = 2.0 + rng() * 1.4;
       const x = bx + 1 + rng() * (CHUNK - 2);
@@ -384,7 +409,9 @@
       m.position.set(x, s/2, z); m.castShadow = true; m.receiveShadow = true; group.add(m);
       obs.push({ min: { x: x - s/2, z: z - s/2 }, max: { x: x + s/2, z: z + s/2 }, top: s, mesh: m });
     }
-    if (rng() < 0.55) { // a low barrier for cover
+
+    // a low barrier for cover
+    if (rng() < 0.5) {
       const horiz = rng() < 0.5;
       const w = horiz ? 4 + rng()*4 : 1, d = horiz ? 1 : 4 + rng()*4, h = 1.2;
       const x = bx + 2 + rng() * (CHUNK - 4), z = bz + 2 + rng() * (CHUNK - 4);
@@ -392,6 +419,40 @@
       m.position.set(x, h/2, z); m.castShadow = true; m.receiveShadow = true; group.add(m);
       obs.push({ min: { x: x - w/2, z: z - d/2 }, max: { x: x + w/2, z: z + d/2 }, top: h, mesh: m });
     }
+
+    // structural pillar running to the roof
+    if (rng() < 0.55) {
+      const s = 0.9;
+      const x = bx + 2 + rng() * (CHUNK - 4), z = bz + 2 + rng() * (CHUNK - 4);
+      const m = new THREE.Mesh(new THREE.BoxGeometry(s, ROOF_H, s), concMat);
+      m.position.set(x, ROOF_H/2, z); m.castShadow = true; m.receiveShadow = true; group.add(m);
+      obs.push({ min: { x: x - s/2, z: z - s/2 }, max: { x: x + s/2, z: z + s/2 }, top: ROOF_H, mesh: m });
+    }
+
+    // raised platform reached by a ramp (walk up, stand on top, walk underneath)
+    if (rng() < 0.45) {
+      const pw = 5 + rng()*3, pd = 5 + rng()*3, ph = 2.3 + rng()*0.7, thick = 0.5;
+      const px = bx + 7 + rng() * Math.max(1, CHUNK - 14);
+      const pz = bz + 4 + rng() * Math.max(1, CHUNK - 8);
+      const pm = new THREE.Mesh(new THREE.BoxGeometry(pw, thick, pd), concMat);
+      pm.position.set(px, ph - thick/2, pz); pm.castShadow = true; pm.receiveShadow = true; group.add(pm);
+      obs.push({ min: { x: px - pw/2, z: pz - pd/2 }, max: { x: px + pw/2, z: pz + pd/2 }, top: ph, bottom: ph - thick, mesh: pm });
+      // support legs (visual)
+      [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([sx, sz]) => {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.3, ph, 0.3), concMat);
+        leg.position.set(px + sx*(pw/2 - 0.4), ph/2, pz + sz*(pd/2 - 0.4)); group.add(leg);
+      });
+      // ramp up to the platform's -x edge
+      const rampW = Math.min(pd, 3);
+      const x1 = px - pw/2, x0 = x1 - ph * 2; // ~0.5 slope
+      const len = Math.hypot(x1 - x0, ph);
+      const rm = new THREE.Mesh(new THREE.BoxGeometry(len, 0.3, rampW), crateMat);
+      rm.position.set((x0 + x1)/2, ph/2, pz);
+      rm.rotation.z = Math.atan2(ph, x1 - x0);
+      rm.castShadow = true; rm.receiveShadow = true; group.add(rm);
+      obs.push({ ramp: true, axis: "x", x0, x1, height: ph, min: { x: x0, z: pz - rampW/2 }, max: { x: x1, z: pz + rampW/2 }, mesh: rm });
+    }
+
     scene.add(group);
     return { group, obs };
   }
@@ -855,7 +916,8 @@
 
   function insideObstacle(x, z, y) {
     for (const o of obstacles) {
-      if (x >= o.min.x && x <= o.max.x && z >= o.min.z && z <= o.max.z && y <= (o.top || 6)) return true;
+      if (o.ramp) continue;
+      if (x >= o.min.x && x <= o.max.x && z >= o.min.z && z <= o.max.z && y >= (o.bottom || 0) && y <= (o.top || 6)) return true;
     }
     return false;
   }
@@ -1101,18 +1163,30 @@
   // ---------- Collision helpers ----------
   // Height of whatever surface is under (x,z): 0 = ground, or a standable
   // obstacle top. Tall perimeter walls are excluded so you can't scale them.
-  function groundHeightAt(x, z, radius) {
+  function groundHeightAt(x, z, radius, feetY) {
+    const tol = feetY === undefined ? Infinity : feetY + 0.6; // only surfaces at/under our feet (+step)
     let h = 0;
     for (const o of obstacles) {
+      if (x < o.min.x - radius || x > o.max.x + radius || z < o.min.z - radius || z > o.max.z + radius) continue;
+      if (o.ramp) {
+        const t = Math.max(0, Math.min(1, (x - o.x0) / (o.x1 - o.x0)));
+        const rh = t * o.height;
+        if (rh <= tol + 0.1 && rh > h) h = rh;
+        continue;
+      }
       const top = o.top || 6;
-      if (top > 3.6) continue;
-      if (x >= o.min.x - radius && x <= o.max.x + radius && z >= o.min.z - radius && z <= o.max.z + radius && top > h) h = top;
+      if (top > 3.6) continue;          // can't stand on tall columns/walls
+      if (top <= tol && top > h) h = top;
     }
     return h;
   }
   function resolveCollision(px, pz, radius, feetY = 0) {
+    const headY = feetY + 1.8;
     for (const o of obstacles) {
-      if (feetY >= (o.top || 6) - 0.05) continue; // on top of / above it → no side collision
+      if (o.ramp) continue;                        // ramps are walkable slopes
+      const top = o.top || 6, bottom = o.bottom || 0;
+      if (feetY >= top - 0.05) continue;           // standing on / above it
+      if (headY <= bottom + 0.05) continue;        // entirely beneath it → walk under (platforms)
       const cx = Math.max(o.min.x, Math.min(px, o.max.x));
       const cz = Math.max(o.min.z, Math.min(pz, o.max.z));
       const dx = px - cx, dz = pz - cz;
@@ -1202,7 +1276,7 @@
     jumpPressed = false;
     player.vy -= GRAV * dt;
     player.y += player.vy * dt;
-    const groundY = groundHeightAt(player.x, player.z, 0.35) + EYE;
+    const groundY = groundHeightAt(player.x, player.z, 0.35, player.y - EYE) + EYE;
     if (player.y <= groundY) { player.y = groundY; player.vy = 0; player.onGround = true; jumpsLeft = 2; }
     else player.onGround = false;
 
@@ -1215,9 +1289,12 @@
     );
     shakeAmt *= Math.pow(0.02, dt);
 
-    // infinite ground + shadows follow the player
+    // infinite ground + roof + shadows follow the player
     floor.position.set(player.x, 0, player.z);
     floorTex.offset.set(player.x / TILE, player.z / TILE);
+    roof.position.set(player.x, ROOF_H, player.z);
+    roofTex.offset.set(player.x / TILE, player.z / TILE);
+    ceilingRig.position.set(player.x, 0, player.z);
     sun.position.set(player.x + 30, 50, player.z + 18);
     sun.target.position.set(player.x, 0, player.z);
     sun.target.updateMatrixWorld();
@@ -1376,9 +1453,10 @@
         else if (dist2(b.pos.x, b.pos.z, player.x, player.z) > 60 * 60) gone = true; // far away
         else {
           for (const o of obstacles) {                                // cover / walls
+            if (o.ramp) continue;
             if (b.pos.x >= o.min.x && b.pos.x <= o.max.x &&
                 b.pos.z >= o.min.z && b.pos.z <= o.max.z &&
-                b.pos.y <= (o.top || 6)) { gone = true; break; }
+                b.pos.y >= (o.bottom || 0) && b.pos.y <= (o.top || 6)) { gone = true; break; }
           }
         }
       }
