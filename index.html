@@ -157,14 +157,14 @@
   /* Mobile touch controls */
   #mobile { position: absolute; inset: 0; z-index: 6; pointer-events: none; }
   #mobile.hidden { display: none; }
-  #joy { position: absolute; width: 120px; height: 120px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.25); background: rgba(0,0,0,0.22); display: none; pointer-events: none; }
-  #joyKnob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: rgba(255,255,255,0.4); box-shadow: 0 2px 8px rgba(0,0,0,0.5); }
-  .tbtn { position: absolute; pointer-events: auto; width: 76px; height: 76px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.3); background: rgba(0,0,0,0.35); color: #eaf2e8; font-weight: 700; font-size: 13px; letter-spacing: 1px; display: flex; align-items: center; justify-content: center; -webkit-user-select: none; user-select: none; text-shadow: 0 1px 3px #000; }
-  .tbtn:active { background: rgba(139,195,74,0.4); }
-  .tbtn.fire { width: 98px; height: 98px; right: 22px; bottom: 120px; background: rgba(200,40,40,0.32); border-color: rgba(255,90,80,0.65); }
-  #btnAds { right: 128px; bottom: 150px; }
-  #btnJump { right: 132px; bottom: 50px; }
-  #btnReload { right: 30px; bottom: 32px; width: 64px; height: 64px; font-size: 12px; }
+  #joy { position: absolute; width: 90px; height: 90px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.22); background: rgba(0,0,0,0.18); display: none; pointer-events: none; }
+  #joyKnob { position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; background: rgba(255,255,255,0.4); box-shadow: 0 2px 8px rgba(0,0,0,0.5); }
+  .tbtn { position: absolute; pointer-events: auto; width: 54px; height: 54px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,0.28); background: rgba(0,0,0,0.28); color: #eaf2e8; font-weight: 700; font-size: 11px; letter-spacing: 1px; display: flex; align-items: center; justify-content: center; -webkit-user-select: none; user-select: none; text-shadow: 0 1px 3px #000; opacity: 0.82; }
+  .tbtn:active { background: rgba(139,195,74,0.4); opacity: 1; }
+  .tbtn.fire { width: 70px; height: 70px; right: 14px; bottom: 92px; background: rgba(200,40,40,0.3); border-color: rgba(255,90,80,0.6); }
+  #btnAds { right: 90px; bottom: 112px; }
+  #btnJump { right: 92px; bottom: 30px; }
+  #btnReload { right: 18px; bottom: 22px; width: 46px; height: 46px; font-size: 10px; }
 </style>
 </head>
 <body>
@@ -267,7 +267,7 @@
 
   // Build timestamp — bumped on each commit so you can confirm the live
   // GitHub Page matches the latest push.
-  const BUILD = "2026-11-14 13:29 UTC";
+  const BUILD = "2026-11-14 13:43 UTC";
   const _stamp = document.getElementById("buildStamp");
   if (_stamp) _stamp.textContent = "BUILD " + BUILD;
 
@@ -1036,12 +1036,12 @@
 
   // ---------- Touch controls (mobile) ----------
   const joyEl = document.getElementById("joy"), joyKnob = document.getElementById("joyKnob");
-  function showJoy(x, y) { joyEl.style.left = (x - 60) + "px"; joyEl.style.top = (y - 60) + "px"; joyEl.style.display = "block"; joyKnob.style.transform = "translate(-50%,-50%)"; }
+  function showJoy(x, y) { joyEl.style.left = (x - 45) + "px"; joyEl.style.top = (y - 45) + "px"; joyEl.style.display = "block"; joyKnob.style.transform = "translate(-50%,-50%)"; }
   function moveKnob(dx, dy) { joyKnob.style.transform = "translate(calc(-50% + " + dx + "px), calc(-50% + " + dy + "px))"; }
   function hideJoy() { joyEl.style.display = "none"; }
   function onTouchStart(e) {
     for (const t of e.changedTouches) {
-      if (t.clientX < window.innerWidth * 0.45 && tState.moveId === null) {
+      if (t.clientX < window.innerWidth * 0.3 && tState.moveId === null) {
         tState.moveId = t.identifier; tState.moveOx = t.clientX; tState.moveOy = t.clientY; showJoy(t.clientX, t.clientY);
       } else if (tState.lookId === null) {
         tState.lookId = t.identifier; tState.lookX = t.clientX; tState.lookY = t.clientY;
@@ -1052,7 +1052,7 @@
   function onTouchMove(e) {
     for (const t of e.changedTouches) {
       if (t.identifier === tState.moveId) {
-        const dx = t.clientX - tState.moveOx, dy = t.clientY - tState.moveOy, R = 55;
+        const dx = t.clientX - tState.moveOx, dy = t.clientY - tState.moveOy, R = 42;
         const mag = Math.hypot(dx, dy) || 1, cl = Math.min(mag, R);
         touchMove.x = (dx / mag) * cl / R; touchMove.y = (dy / mag) * cl / R;
         moveKnob((dx / mag) * cl, (dy / mag) * cl);
