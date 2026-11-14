@@ -153,6 +153,18 @@
   #coopHud { position: absolute; left: 50%; top: 52px; transform: translateX(-50%); text-align: center; font-size: 13px; letter-spacing: 2px; text-shadow: 0 2px 6px rgba(0,0,0,0.8); }
   #coopHud .ally { color: #5aa0ff; }
   #coopHud.hidden { display: none; }
+
+  /* Mobile touch controls */
+  #mobile { position: absolute; inset: 0; z-index: 6; pointer-events: none; }
+  #mobile.hidden { display: none; }
+  #joy { position: absolute; width: 120px; height: 120px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.25); background: rgba(0,0,0,0.22); display: none; pointer-events: none; }
+  #joyKnob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: rgba(255,255,255,0.4); box-shadow: 0 2px 8px rgba(0,0,0,0.5); }
+  .tbtn { position: absolute; pointer-events: auto; width: 76px; height: 76px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.3); background: rgba(0,0,0,0.35); color: #eaf2e8; font-weight: 700; font-size: 13px; letter-spacing: 1px; display: flex; align-items: center; justify-content: center; -webkit-user-select: none; user-select: none; text-shadow: 0 1px 3px #000; }
+  .tbtn:active { background: rgba(139,195,74,0.4); }
+  .tbtn.fire { width: 98px; height: 98px; right: 22px; bottom: 120px; background: rgba(200,40,40,0.32); border-color: rgba(255,90,80,0.65); }
+  #btnAds { right: 128px; bottom: 150px; }
+  #btnJump { right: 132px; bottom: 50px; }
+  #btnReload { right: 30px; bottom: 32px; width: 64px; height: 64px; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -195,6 +207,14 @@
   </div>
   <div id="waveBanner"><div class="big" id="waveBig">WAVE 1</div><div class="small" id="waveSmall">Hostiles inbound</div></div>
   <div id="coopHud" class="hidden"><span class="ally" id="allyLabel">● Ally</span> <span id="allyHp">100</span></div>
+
+  <div id="mobile" class="hidden">
+    <div id="joy"><div id="joyKnob"></div></div>
+    <div id="btnFire" class="tbtn fire">FIRE</div>
+    <div id="btnAds" class="tbtn">AIM</div>
+    <div id="btnJump" class="tbtn">JUMP</div>
+    <div id="btnReload" class="tbtn">RLD</div>
+  </div>
 </div>
 
 <div id="startScreen" class="screen">
@@ -210,6 +230,7 @@
     <b>Shift</b><span>Sprint</span>
     <b>R</b><span>Reload</span>
     <b>Space ×2</b><span>Jump / double-jump</span>
+    <b>V</b><span>Zoom out (see your unicorn)</span>
     <b>Esc</b><span>Release mouse</span>
   </div>
   <button id="startBtn" disabled>Loading…</button>
@@ -246,7 +267,7 @@
 
   // Build timestamp — bumped on each commit so you can confirm the live
   // GitHub Page matches the latest push.
-  const BUILD = "2026-11-13 14:39 UTC";
+  const BUILD = "2026-11-14 13:29 UTC";
   const _stamp = document.getElementById("buildStamp");
   if (_stamp) _stamp.textContent = "BUILD " + BUILD;
 
@@ -574,6 +595,42 @@
   let gun = models.rifle, flash = models.rifle.userData.flash, flashLight = models.rifle.userData.flashLight;
   gun.visible = true;
 
+  // ---------- Player body: unicorn skin (shown in third-person) ----------
+  let thirdPerson = false;
+  function makeUnicorn() {
+    const g = new THREE.Group();
+    const white = new THREE.MeshStandardMaterial({ color: 0xfff2fb, roughness: 0.8 });
+    const gold = new THREE.MeshStandardMaterial({ color: 0xffd23f, metalness: 0.4, roughness: 0.4, emissive: 0x4a3400, emissiveIntensity: 0.4 });
+    const dark = new THREE.MeshBasicMaterial({ color: 0x0a0a0a });
+    const rainbow = [0xff5a5a, 0xffa94d, 0xffe14d, 0x7bed7b, 0x5ab0ff, 0xb08bff];
+    const mane = (x, y, z, c) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.16), new THREE.MeshStandardMaterial({ color: c, roughness: 0.6 })); m.position.set(x, y, z); g.add(m); };
+    // torso + chest (faces +z)
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.58, 1.05), white); body.position.set(0, 0.95, 0); body.castShadow = true; g.add(body);
+    const neck = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.5, 0.34), white); neck.position.set(0, 1.25, 0.5); neck.rotation.x = -0.5; g.add(neck);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.34, 0.5), white); head.position.set(0, 1.5, 0.72); head.castShadow = true; g.add(head);
+    const snout = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.24, 0.2), white); snout.position.set(0, 1.44, 0.98); g.add(snout);
+    // ears
+    [-0.12, 0.12].forEach(x => { const e = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.16, 6), white); e.position.set(x, 1.72, 0.66); g.add(e); });
+    // golden spiral horn
+    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.42, 8), gold); horn.position.set(0, 1.86, 0.78); horn.rotation.x = 0.35; g.add(horn);
+    // eyes
+    [-0.1, 0.1].forEach(x => { const e = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 0.04), dark); e.position.set(x, 1.52, 0.97); g.add(e); });
+    // rainbow mane down the neck/back
+    for (let i = 0; i < 6; i++) mane(0, 1.66 - i * 0.14, 0.62 - i * 0.14, rainbow[i % 6]);
+    for (let i = 0; i < 4; i++) mane(0, 1.28 - i * 0.02, 0.2 - i * 0.22, rainbow[i % 6]);
+    // rainbow tail
+    for (let i = 0; i < 5; i++) mane((i % 2 ? 0.08 : -0.08), 0.95 - i * 0.14, -0.6 - i * 0.03, rainbow[(i + 2) % 6]);
+    // legs
+    [[-0.2, 0.42], [0.2, 0.42], [-0.2, -0.42], [0.2, -0.42]].forEach(([x, z]) => {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.7, 0.18), white); leg.position.set(x, 0.35, z); leg.castShadow = true; g.add(leg);
+      const hoof = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, 0.2), gold); hoof.position.set(x, 0.06, z); g.add(hoof);
+    });
+    g.visible = false;
+    return g;
+  }
+  const playerBody = makeUnicorn();
+  scene.add(playerBody);
+
   // ---------- Enemies ----------
   const enemies = [];
   const eBullets = [];
@@ -724,10 +781,12 @@
   }
   function buildWeaponList() {
     const el = document.getElementById("weaponList"); el.innerHTML = "";
+    if (isTouch) el.style.pointerEvents = "auto";
     WEAPON_ORDER.forEach((name, i) => {
       const w = WEAPONS[name];
       const d = document.createElement("div"); d.className = "w"; d.dataset.name = name;
       d.innerHTML = '<b>' + (i + 1) + '</b>' + w.name + (w.kind === "throw" ? ' <span class="cnt">×' + w.count + '</span>' : '');
+      if (isTouch) d.addEventListener("touchstart", (e) => { e.preventDefault(); e.stopPropagation(); switchWeapon(name); }, { passive: false });
       el.appendChild(d);
     });
   }
@@ -918,6 +977,9 @@
   let pointerLocked = false;
   let firing = false, firePressed = false;
   let shakeAmt = 0;
+  const isTouch = (navigator.maxTouchPoints > 0) || ("ontouchstart" in window) || matchMedia("(pointer: coarse)").matches;
+  const touchMove = { x: 0, y: 0 };
+  const tState = { moveId: null, moveOx: 0, moveOy: 0, lookId: null, lookX: 0, lookY: 0 };
   let ads = false, curFov = 78, sensScale = 1;
   const HIP_FOV = 78, ADS_FOV = 40;
 
@@ -932,6 +994,7 @@
     keys[e.code] = true;
     if (e.code === "KeyR") reload();
     if (e.code === "Space") { e.preventDefault(); jumpPressed = true; }
+    if (e.code === "KeyV") thirdPerson = !thirdPerson; // zoom out to see your unicorn
     if (e.code.startsWith("Digit")) { const n = +e.code.slice(5); if (n >= 1 && n <= WEAPON_ORDER.length) switchWeapon(WEAPON_ORDER[n - 1]); }
   });
   document.addEventListener("keyup", (e) => { keys[e.code] = false; });
@@ -961,7 +1024,7 @@
     player.pitch = Math.max(-1.3, Math.min(1.3, player.pitch));
   });
 
-  function requestLock() { renderer.domElement.requestPointerLock(); }
+  function requestLock() { if (isTouch) return; try { renderer.domElement.requestPointerLock(); } catch (e) {} }
   document.addEventListener("pointerlockchange", () => {
     pointerLocked = document.pointerLockElement === renderer.domElement;
     if (!pointerLocked) { firing = false; setAds(false); }
@@ -969,14 +1032,69 @@
       // paused look; show subtle hint by dimming crosshair — keep simple: do nothing destructive
     }
   });
-  renderer.domElement.addEventListener("click", () => { initAudio(); if (state === S.PLAY && !pointerLocked) requestLock(); });
+  renderer.domElement.addEventListener("click", () => { initAudio(); if (!isTouch && state === S.PLAY && !pointerLocked) requestLock(); });
+
+  // ---------- Touch controls (mobile) ----------
+  const joyEl = document.getElementById("joy"), joyKnob = document.getElementById("joyKnob");
+  function showJoy(x, y) { joyEl.style.left = (x - 60) + "px"; joyEl.style.top = (y - 60) + "px"; joyEl.style.display = "block"; joyKnob.style.transform = "translate(-50%,-50%)"; }
+  function moveKnob(dx, dy) { joyKnob.style.transform = "translate(calc(-50% + " + dx + "px), calc(-50% + " + dy + "px))"; }
+  function hideJoy() { joyEl.style.display = "none"; }
+  function onTouchStart(e) {
+    for (const t of e.changedTouches) {
+      if (t.clientX < window.innerWidth * 0.45 && tState.moveId === null) {
+        tState.moveId = t.identifier; tState.moveOx = t.clientX; tState.moveOy = t.clientY; showJoy(t.clientX, t.clientY);
+      } else if (tState.lookId === null) {
+        tState.lookId = t.identifier; tState.lookX = t.clientX; tState.lookY = t.clientY;
+      }
+    }
+    e.preventDefault();
+  }
+  function onTouchMove(e) {
+    for (const t of e.changedTouches) {
+      if (t.identifier === tState.moveId) {
+        const dx = t.clientX - tState.moveOx, dy = t.clientY - tState.moveOy, R = 55;
+        const mag = Math.hypot(dx, dy) || 1, cl = Math.min(mag, R);
+        touchMove.x = (dx / mag) * cl / R; touchMove.y = (dy / mag) * cl / R;
+        moveKnob((dx / mag) * cl, (dy / mag) * cl);
+      } else if (t.identifier === tState.lookId) {
+        const dx = t.clientX - tState.lookX, dy = t.clientY - tState.lookY;
+        tState.lookX = t.clientX; tState.lookY = t.clientY;
+        const s = 0.005 * sensScale;
+        player.yaw -= dx * s; player.pitch -= dy * s;
+        player.pitch = Math.max(-1.3, Math.min(1.3, player.pitch));
+      }
+    }
+    e.preventDefault();
+  }
+  function onTouchEnd(e) {
+    for (const t of e.changedTouches) {
+      if (t.identifier === tState.moveId) { tState.moveId = null; touchMove.x = 0; touchMove.y = 0; hideJoy(); }
+      else if (t.identifier === tState.lookId) { tState.lookId = null; }
+    }
+  }
+  if (isTouch) {
+    renderer.domElement.addEventListener("touchstart", onTouchStart, { passive: false });
+    renderer.domElement.addEventListener("touchmove", onTouchMove, { passive: false });
+    renderer.domElement.addEventListener("touchend", onTouchEnd);
+    renderer.domElement.addEventListener("touchcancel", onTouchEnd);
+    // action buttons
+    const hold = (id, down, up) => {
+      const el = document.getElementById(id);
+      el.addEventListener("touchstart", (e) => { e.preventDefault(); e.stopPropagation(); down(); }, { passive: false });
+      if (up) el.addEventListener("touchend", (e) => { e.preventDefault(); e.stopPropagation(); up(); });
+    };
+    hold("btnFire", () => { firing = true; firePressed = true; }, () => { firing = false; });
+    hold("btnJump", () => { jumpPressed = true; });
+    hold("btnReload", () => reload());
+    hold("btnAds", () => { if (WEAPON.canAds) setAds(!ads); });
+  }
 
   // ---------- Firing ----------
   const raycaster = new THREE.Raycaster();
   const centerVec = new THREE.Vector2(0, 0);
 
   function handleTriggers() {
-    if (!pointerLocked || state !== S.PLAY) return;
+    if (state !== S.PLAY || (!pointerLocked && !isTouch)) return;
     if (WEAPON.kind === "throw") { if (firePressed) throwItem(); return; }
     if (WEAPON.auto) { if (firing) shoot(); }
     else if (firePressed) shoot();
@@ -1459,6 +1577,7 @@
     const spawnX = net.role === "join" ? 3 : 0;
     player.x = spawnX; player.z = 10; player.y = EYE; player.vy = 0; player.yaw = Math.PI; player.pitch = 0; player.health = 100;
     player.onGround = true; jumpsLeft = 2; jumpPressed = false;
+    thirdPerson = false; playerBody.visible = false;
     net.join = { x: 3, y: 0, z: 10, ry: Math.PI }; net.joinHp = 100; net.joinHit = 0;
     net.remote = { x: 0, y: 0, z: 10, ry: Math.PI, hp: 100 };
     resetWorld(); updateChunks(true); // fresh infinite terrain around spawn
@@ -1469,6 +1588,8 @@
     document.getElementById("reloadMsg").textContent = "";
     const coop = document.getElementById("coopHud");
     coop.classList.toggle("hidden", net.role === "sp");
+    document.getElementById("mobile").classList.toggle("hidden", !isTouch);
+    hideJoy();
     document.getElementById("allyLabel").textContent = net.role === "host" ? "● Joiner" : net.role === "join" ? "● Host" : "● Ally";
     updateAmmo(); updateWeaponHud(); updateHealth();
     requestLock();
@@ -1478,6 +1599,7 @@
     state = S.OVER;
     if (net.role === "host") netSend({ t: "over" }); // end co-op for the joiner too
     document.getElementById("coopHud").classList.add("hidden");
+    document.getElementById("mobile").classList.add("hidden");
     document.exitPointerLock();
     document.getElementById("finalKills").textContent = kills;
     document.getElementById("finalWave").textContent = wave;
@@ -1521,6 +1643,7 @@
     if (keys["KeyS"]) fwd -= 1;
     if (keys["KeyD"]) strafe += 1;
     if (keys["KeyA"]) strafe -= 1;
+    if (isTouch) { strafe += touchMove.x; fwd += -touchMove.y; }
     const len = Math.hypot(fwd, strafe);
     if (len > 0) { fwd /= len; strafe /= len; }
     const sinY = Math.sin(player.yaw), cosY = Math.cos(player.yaw);
@@ -1545,14 +1668,32 @@
     if (player.y <= groundY) { player.y = groundY; player.vy = 0; player.onGround = true; jumpsLeft = 2; }
     else player.onGround = false;
 
-    // --- Camera ---
-    const sh = shakeAmt;
-    camera.position.set(
-      player.x + (Math.random()-0.5) * sh,
-      player.y + bobY + (Math.random()-0.5) * sh,
-      player.z + (Math.random()-0.5) * sh
+    // --- Camera orientation ---
+    camera.rotation.set(0, 0, 0);
+    camera.rotation.order = "YXZ";
+    camera.rotation.y = player.yaw;
+    camera.rotation.x = player.pitch;
+    const dir = new THREE.Vector3(
+      Math.sin(player.yaw) * Math.cos(player.pitch),
+      Math.sin(player.pitch),
+      Math.cos(player.yaw) * Math.cos(player.pitch)
     );
+
+    // --- Camera position (first- or third-person) ---
+    const sh = shakeAmt;
+    let camX = player.x, camY = player.y + bobY, camZ = player.z;
+    if (thirdPerson) {
+      const back = 4.5;
+      camX = player.x - dir.x * back;
+      camY = player.y + 1.1 - dir.y * back;
+      camZ = player.z - dir.z * back;
+    }
+    camera.position.set(camX + (Math.random()-0.5)*sh, camY + (Math.random()-0.5)*sh, camZ + (Math.random()-0.5)*sh);
     shakeAmt *= Math.pow(0.02, dt);
+
+    // show the unicorn body only in third person
+    playerBody.visible = thirdPerson;
+    if (thirdPerson) { playerBody.position.set(player.x, player.y - EYE, player.z); playerBody.rotation.y = player.yaw; }
 
     // infinite ground + roof + shadows follow the player
     floor.position.set(player.x, 0, player.z);
@@ -1563,16 +1704,6 @@
     sun.position.set(player.x + 30, 50, player.z + 18);
     sun.target.position.set(player.x, 0, player.z);
     sun.target.updateMatrixWorld();
-    const dir = new THREE.Vector3(
-      Math.sin(player.yaw) * Math.cos(player.pitch),
-      Math.sin(player.pitch),
-      Math.cos(player.yaw) * Math.cos(player.pitch)
-    );
-    // note: forward uses -dir for lookAt target below
-    camera.rotation.set(0, 0, 0);
-    camera.rotation.order = "YXZ";
-    camera.rotation.y = player.yaw;
-    camera.rotation.x = player.pitch;
 
     // --- Scope zoom ---
     const targetFov = ads ? (WEAPON.adsFov || ADS_FOV) : HIP_FOV;
@@ -1780,10 +1911,12 @@
     update(dt);
     renderer.autoClear = true;
     renderer.render(scene, camera);
-    // render gun on top
-    renderer.autoClear = false;
-    renderer.clearDepth();
-    renderer.render(gunScene, gunCam);
+    // render held weapon on top (first-person only)
+    if (!thirdPerson) {
+      renderer.autoClear = false;
+      renderer.clearDepth();
+      renderer.render(gunScene, gunCam);
+    }
   }
   animate();
 
@@ -1794,7 +1927,9 @@
   const startBtn = document.getElementById("startBtn");
   startBtn.disabled = false;
   startBtn.textContent = "► Deploy";
-  document.getElementById("startHigh").textContent = "Engine ready · Click Deploy, then click the screen to capture the mouse.";
+  document.getElementById("startHigh").textContent = isTouch
+    ? "Tap Deploy · left side = move · right side = look · on-screen buttons to fire, aim, jump, reload · tap a weapon to switch"
+    : "Engine ready · Click Deploy, then click the screen to capture the mouse.";
 
 })();
 </script>
