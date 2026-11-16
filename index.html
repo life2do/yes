@@ -267,7 +267,7 @@
 
   // Build timestamp — bumped on each commit so you can confirm the live
   // GitHub Page matches the latest push.
-  const BUILD = "2026-11-14 13:43 UTC";
+  const BUILD = "2026-11-16 06:50 UTC";
   const _stamp = document.getElementById("buildStamp");
   if (_stamp) _stamp.textContent = "BUILD " + BUILD;
 
@@ -625,6 +625,11 @@
       const leg = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.7, 0.18), white); leg.position.set(x, 0.35, z); leg.castShadow = true; g.add(leg);
       const hoof = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, 0.2), gold); hoof.position.set(x, 0.06, z); g.add(hoof);
     });
+    // rifle held out in front (unicorn faces +z)
+    const rg = new THREE.Group();
+    rg.add(new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 0.5), metal));
+    const rb = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.42, 8), metal); rb.rotation.x = Math.PI/2; rb.position.z = 0.42; rg.add(rb);
+    rg.position.set(0.22, 1.02, 0.55); g.add(rg);
     g.visible = false;
     return g;
   }
@@ -677,15 +682,15 @@
       blade.position.set(0, -0.5, 0.16); blade.rotation.x = -1.25; // point forward
       armR.add(blade);
     } else {
-      // full rifle held across the chest, pointing forward (enemy faces the player)
+      // full rifle held out in front, barrel toward where the enemy faces (+z)
       const rg = new THREE.Group();
       rg.add(new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.16, 0.66), metal));                          // receiver
-      const brl = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.55, 8), metal); brl.rotation.x = Math.PI/2; brl.position.z = -0.6; rg.add(brl);
-      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.14, 0.26), enemyDarkMat); stock.position.z = 0.38; rg.add(stock);
-      const mg = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.22, 0.11), metal); mg.position.set(0, -0.17, 0.04); rg.add(mg);
+      const brl = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.55, 8), metal); brl.rotation.x = Math.PI/2; brl.position.z = 0.6; rg.add(brl);
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.14, 0.26), enemyDarkMat); stock.position.z = -0.38; rg.add(stock);
+      const mg = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.22, 0.11), metal); mg.position.set(0, -0.17, -0.02); rg.add(mg);
       gunFlash = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffdd66, transparent: true, opacity: 0 }));
-      gunFlash.position.set(0, 0, -0.9); rg.add(gunFlash);
-      rg.position.set(0.22, 1.32, -0.28); rg.rotation.y = 0.14; g.add(rg);
+      gunFlash.position.set(0, 0, 0.92); rg.add(gunFlash);
+      rg.position.set(0.16, 1.3, 0.32); g.add(rg);
     }
 
     // everything on the head counts as a headshot
