@@ -45,11 +45,18 @@
   #scope.scope-acog   #ret-acog   { display: block; }
   #scope.scope-reddot #ret-reddot { display: block; }
   #scope.scope-holo   #ret-holo   { display: block; }
+  #scope.scope-sniper #ret-sniper { display: block; }
 
   /* vignette (lens blackout) per optic */
   #scope.scope-acog .vignette   { background: radial-gradient(circle at 50% 50%, rgba(0,0,0,0) 0, rgba(0,0,0,0) 32vmin, rgba(0,0,0,0.6) 32.4vmin, rgba(0,0,0,0.98) 36vmin, #000 37vmin); }
   #scope.scope-reddot .vignette { background: radial-gradient(circle at 50% 50%, rgba(0,0,0,0) 0, rgba(0,0,0,0) 44vmin, rgba(0,0,0,0.18) 45vmin, rgba(0,0,0,0.5) 53vmin); }
   #scope.scope-holo .vignette   { background: radial-gradient(circle at 50% 50%, rgba(6,20,26,0) 0, rgba(6,20,26,0) 37vmin, rgba(0,12,18,0.5) 37.6vmin, rgba(0,6,10,0.96) 42vmin, #000 43vmin); }
+  #scope.scope-sniper .vignette { background: radial-gradient(circle at 50% 50%, rgba(0,0,0,0) 0, rgba(0,0,0,0) 30vmin, rgba(0,0,0,0.75) 30.3vmin, rgba(0,0,0,1) 33vmin, #000 34vmin); }
+
+  /* Sniper — fine full crosshair, red centre dot, high magnification */
+  #ret-sniper .v { position:absolute; left:50%; top:50%; width:1.5px; height:62vmin; background:rgba(8,8,8,0.9); transform:translate(-50%,-50%); }
+  #ret-sniper .h { position:absolute; left:50%; top:50%; height:1.5px; width:62vmin; background:rgba(8,8,8,0.9); transform:translate(-50%,-50%); }
+  #ret-sniper .dot { position:absolute; left:50%; top:50%; width:4px; height:4px; border-radius:50%; background:#ff3b3b; transform:translate(-50%,-50%); box-shadow:0 0 5px #ff3b3b; }
 
   /* ACOG — amber chevron, green ring + crosshair */
   #ret-acog .ring { position:absolute; left:50%; top:50%; width:64vmin; height:64vmin; transform:translate(-50%,-50%); border-radius:50%; border:2px solid rgba(120,170,110,0.22); box-shadow:0 0 36px rgba(0,0,0,0.6) inset; }
@@ -184,6 +191,7 @@
     <div class="reticle" id="ret-acog"><div class="ring"></div><div class="ln v"></div><div class="ln h"></div><div class="chev"></div><div class="dot"></div></div>
     <div class="reticle" id="ret-reddot"><div class="ring"></div><div class="dot"></div></div>
     <div class="reticle" id="ret-holo"><div class="ring"></div><div class="seg t"></div><div class="seg b"></div><div class="seg l"></div><div class="seg r"></div><div class="dot"></div></div>
+    <div class="reticle" id="ret-sniper"><div class="v"></div><div class="h"></div><div class="dot"></div></div>
   </div>
 
   <div class="hud-bl">
@@ -226,7 +234,7 @@
     <b>Mouse</b><span>Look / aim</span>
     <b>Left click</b><span>Fire (hold for auto)</span>
     <b>Right click</b><span>Aim down scope (hold)</span>
-    <b>1–5 / Wheel</b><span>Switch weapon</span>
+    <b>1–6 / Wheel</b><span>Switch weapon</span>
     <b>Shift</b><span>Sprint</span>
     <b>R</b><span>Reload</span>
     <b>Space ×2</b><span>Jump / double-jump</span>
@@ -267,7 +275,7 @@
 
   // Build timestamp — bumped on each commit so you can confirm the live
   // GitHub Page matches the latest push.
-  const BUILD = "2026-11-16 06:54 UTC";
+  const BUILD = "2026-11-16 07:02 UTC";
   const _stamp = document.getElementById("buildStamp");
   if (_stamp) _stamp.textContent = "BUILD " + BUILD;
 
@@ -572,6 +580,17 @@
     mkHands(g, -0.32); addFlash(g, -0.98, 0.11); finishModel(g, "lmg", {x:0.16,y:-0.22,z:-0.56});
   })();
 
+  (() => { const g = new THREE.Group();   // SNIPER (bolt-action, scoped)
+    g.add(part(new THREE.BoxGeometry(0.1,0.13,0.9), polymer, [0,0,-0.02]));                               // long body
+    g.add(part(new THREE.CylinderGeometry(0.03,0.03,0.72,12), metal, [0,0.03,-0.74], [Math.PI/2,0,0]));   // long barrel
+    g.add(part(new THREE.BoxGeometry(0.1,0.12,0.28), polymer, [0,-0.01,0.42]));                           // stock
+    g.add(part(new THREE.CylinderGeometry(0.045,0.045,0.34,12), metal, [0,0.14,-0.12], [Math.PI/2,0,0])); // scope tube
+    g.add(part(new THREE.BoxGeometry(0.03,0.05,0.05), metal, [0,0.1,-0.3]));                              // scope mount
+    g.add(part(new THREE.BoxGeometry(0.07,0.2,0.09), metal, [0,-0.15,-0.04]));                            // magazine
+    g.add(part(new THREE.BoxGeometry(0.06,0.16,0.08), polymer, [0,-0.12,0.14], [-0.35,0,0]));             // grip
+    mkHands(g, -0.2); addFlash(g, -1.02, 0.08); finishModel(g, "sniper", {x:0.14,y:-0.2,z:-0.5});
+  })();
+
   (() => { const g = new THREE.Group();   // FRAG GRENADE in hand
     const fragMat = new THREE.MeshStandardMaterial({ color: 0x2f3d22, roughness: 0.8 });
     g.add(part(new THREE.SphereGeometry(0.1,12,10), fragMat, [0,0,-0.1]));
@@ -748,10 +767,11 @@
     rifle:   { name: "7.62 Rifle",   kind: "gun",   auto: true,  fireRate: 95,  magSize: 30,  mag: 30,  reserve: 120, reloadTime: 1700, lastShot: 0, reloading: false, recoil: 0, spread: 0.008, damage: 22, headMul: 2.6, canAds: true, adsFov: 42, scope: "acog" },
     pistol:  { name: "Sidearm .45",  kind: "gun",   auto: false, fireRate: 135, magSize: 12,  mag: 12,  reserve: 72,  reloadTime: 1100, lastShot: 0, reloading: false, recoil: 0, spread: 0.003, damage: 34, headMul: 3.2, canAds: true, adsFov: 56, scope: "reddot" },
     lmg:     { name: "M249 LMG",     kind: "gun",   auto: true,  fireRate: 65,  magSize: 100, mag: 100, reserve: 200, reloadTime: 3200, lastShot: 0, reloading: false, recoil: 0, spread: 0.028, damage: 17, headMul: 1.8, canAds: true, adsFov: 50, scope: "holo" },
+    sniper:  { name: "Bolt Sniper",  kind: "gun",   auto: false, fireRate: 1100, magSize: 5,  mag: 5,   reserve: 30,  reloadTime: 2600, lastShot: 0, reloading: false, recoil: 0, spread: 0.0004, damage: 150, headMul: 3.0, canAds: true, adsFov: 20, scope: "sniper" },
     grenade: { name: "Frag Grenade", kind: "throw", throwType: "frag", count: 4, max: 8, cooldown: 650, lastThrow: 0, recoil: 0 },
     molotov: { name: "Molotov",      kind: "throw", throwType: "fire", count: 3, max: 6, cooldown: 750, lastThrow: 0, recoil: 0 },
   };
-  const WEAPON_ORDER = ["rifle", "pistol", "lmg", "grenade", "molotov"];
+  const WEAPON_ORDER = ["rifle", "pistol", "lmg", "sniper", "grenade", "molotov"];
   let curWeapon = "rifle";
   let WEAPON = WEAPONS.rifle;
 
@@ -759,6 +779,7 @@
     WEAPONS.rifle.mag = 30;  WEAPONS.rifle.reserve = 120;
     WEAPONS.pistol.mag = 12; WEAPONS.pistol.reserve = 72;
     WEAPONS.lmg.mag = 100;   WEAPONS.lmg.reserve = 200;
+    WEAPONS.sniper.mag = 5;  WEAPONS.sniper.reserve = 30;
     WEAPONS.grenade.count = 4; WEAPONS.molotov.count = 3;
     for (const k in WEAPONS) { const w = WEAPONS[k]; w.reloading = false; w.recoil = 0; w.lastShot = 0; w.lastThrow = 0; }
     curWeapon = "rifle"; WEAPON = WEAPONS.rifle;
@@ -767,6 +788,7 @@
     WEAPONS.rifle.reserve  = Math.min(300, WEAPONS.rifle.reserve + 60);
     WEAPONS.pistol.reserve = Math.min(144, WEAPONS.pistol.reserve + 36);
     WEAPONS.lmg.reserve    = Math.min(400, WEAPONS.lmg.reserve + 100);
+    WEAPONS.sniper.reserve = Math.min(60, WEAPONS.sniper.reserve + 10);
     WEAPONS.grenade.count  = Math.min(WEAPONS.grenade.max, WEAPONS.grenade.count + 2);
     WEAPONS.molotov.count  = Math.min(WEAPONS.molotov.max, WEAPONS.molotov.count + 1);
     updateAmmo(); updateWeaponHud();
